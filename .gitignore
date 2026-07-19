@@ -20,3 +20,82 @@ __pycache__/
 venv/
 env/
 ENV/
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# -----------------------------
+# Node / Vite
+# -----------------------------
+node_modules/
+frontend/node_modules/
+
+dist/
+frontend/dist/
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# -----------------------------
+# IDE
+# -----------------------------
+.vscode/
+.idea/
+
+# -----------------------------
+# OS Files
+# -----------------------------
+.DS_Store
+Thumbs.db
+
+# -----------------------------
+# Temporary Files
+# -----------------------------
+.tmp/
+tmp/
+temp/
+.cache/
+*.log
+
+# -----------------------------
+# Local Application Data
+# -----------------------------
+.fieldnotes_registry/
+.fieldnotes/
+
+backend/storage/
+backend/storage/uploads/
+backend/storage/reports/
+
+# -----------------------------
+# Databases
+# -----------------------------
+*.db
+*.sqlite
+*.sqlite3
+
+# -----------------------------
+# Generated Reports
+# -----------------------------
+reports/
+benchmarks/
+
+# -----------------------------
+# Python Packaging
+# -----------------------------
+build/
+dist/
+*.egg-info/
+pip-wheel-metadata/
+
+# -----------------------------
+# Misc
+# -----------------------------
+*.swp
+*.swo
