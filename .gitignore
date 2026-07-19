@@ -1,0 +1,91 @@
+# -----------------------------
+# Environment & Secrets
+# -----------------------------
+.env
+.env.*
+!.env.example
+
+# -----------------------------
+# Python
+# -----------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.Python
+
+.venv/
+venv/
+env/
+ENV/
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# -----------------------------
+# Node / Vite
+# -----------------------------
+frontend/node_modules/
+frontend/dist/
+node_modules/
+dist/
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# -----------------------------
+# IDE
+# -----------------------------
+.vscode/
+.idea/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# -----------------------------
+# Build / Temp
+# -----------------------------
+.tmp/
+tmp/
+temp/
+*.log
+
+# -----------------------------
+# Local databases / storage
+# -----------------------------
+*.db
+*.sqlite
+*.sqlite3
+
+.fieldnotes/
+backend/storage/
+backend/storage/uploads/
+backend/storage/reports/
+
+# -----------------------------
+# Generated reports
+# -----------------------------
+reports/
+benchmarks/
+
+# -----------------------------
+# Python packaging
+# -----------------------------
+build/
+dist/
+*.egg-info/
+
+# -----------------------------
+# Misc
+# -----------------------------
+.cache/
