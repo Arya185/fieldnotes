@@ -1,0 +1,20 @@
+{
+  "benchmark_keys": [
+    "execution_metrics",
+    "frontend_build_timing_ms",
+    "latency_summary",
+    "regression_comparison",
+    "retrieval_metrics"
+  ],
+  "structured_log_keys": [
+    "component",
+    "message",
+    "metadata",
+    "request_id",
+    "run_id",
+    "severity",
+    "timestamp",
+    "trace_id",
+    "workspace_id"
+  ]
+}

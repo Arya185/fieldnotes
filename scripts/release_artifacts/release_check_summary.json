@@ -1,0 +1,57 @@
+[
+  {
+    "check": "backend starts",
+    "detail": "uvicorn healthy",
+    "passed": true
+  },
+  {
+    "check": "health endpoint responds",
+    "detail": "1.0.0-beta.1",
+    "passed": true
+  },
+  {
+    "check": "frontend builds",
+    "detail": "vite build passed",
+    "passed": true
+  },
+  {
+    "check": "version consistency",
+    "detail": "1.0.0-beta.1",
+    "passed": true
+  },
+  {
+    "check": "documentation example commands",
+    "detail": "README + installation + quickstart",
+    "passed": true
+  },
+  {
+    "check": "workspace indexing succeeds",
+    "detail": "workspace_id=f1728202-0d1b-43a9-afed-4d1cc49f358f",
+    "passed": true
+  },
+  {
+    "check": "chat request succeeds",
+    "detail": "file_12dfac2a0a81c21d55e8f319#block3/b1",
+    "passed": true
+  },
+  {
+    "check": "quiz flow succeeds",
+    "detail": "file_12dfac2a0a81c21d55e8f319#block1/b1",
+    "passed": true
+  },
+  {
+    "check": "notebook loads",
+    "detail": "artifacts=6",
+    "passed": true
+  },
+  {
+    "check": "source viewer opens",
+    "detail": "notes.md block3/b1",
+    "passed": true
+  },
+  {
+    "check": "benchmark runner executes",
+    "detail": "scripts/release_artifacts/release_benchmarks.json",
+    "passed": true
+  }
+]

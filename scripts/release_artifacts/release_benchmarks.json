@@ -1,0 +1,109 @@
+{
+  "execution_metrics": {
+    "analysis_correctness": 1.0,
+    "citation_preservation_rate": 1.0,
+    "execution_success_rate": 1.0,
+    "plan_completion_rate": 1.0
+  },
+  "frontend_build_timing_ms": 1700.8082089887466,
+  "latency_summary": {
+    "chunking_duration_ms": {
+      "avg": 0.010229501640424132,
+      "count": 2.0,
+      "max": 0.01416700251866132,
+      "min": 0.0062920007621869445
+    },
+    "embedding_duration_ms": {
+      "avg": 0.06452099478337914,
+      "count": 2.0,
+      "max": 0.09433399827685207,
+      "min": 0.034707991289906204
+    },
+    "executor_latency_ms": {
+      "avg": 385.77687500219326,
+      "count": 1.0,
+      "max": 385.77687500219326,
+      "min": 385.77687500219326
+    },
+    "indexing_duration_ms": {
+      "avg": 9.63012500142213,
+      "count": 1.0,
+      "max": 9.63012500142213,
+      "min": 9.63012500142213
+    },
+    "parsing_duration_ms": {
+      "avg": 1.8272914894623682,
+      "count": 2.0,
+      "max": 3.5816249874187633,
+      "min": 0.07295799150597304
+    },
+    "reranking_latency_ms": {
+      "avg": 0.04558300133794546,
+      "count": 1.0,
+      "max": 0.04558300133794546,
+      "min": 0.04558300133794546
+    },
+    "retrieval_latency_ms": {
+      "avg": 0.13095800143977007,
+      "count": 3.0,
+      "max": 0.23512500047218055,
+      "min": 0.07566600106656551
+    },
+    "sandbox_execution_time_ms": {
+      "avg": 385.02737499948125,
+      "count": 1.0,
+      "max": 385.02737499948125,
+      "min": 385.02737499948125
+    }
+  },
+  "regression_comparison": {
+    "chunking_duration_ms": {
+      "avg_delta_ms": -0.011249998351559043,
+      "max_delta_ms": -0.009916999260894954
+    },
+    "embedding_duration_ms": {
+      "avg_delta_ms": -0.061271006416063756,
+      "max_delta_ms": -0.05366600817069411
+    },
+    "executor_latency_ms": {
+      "avg_delta_ms": -227.6396660017781,
+      "max_delta_ms": -227.6396660017781
+    },
+    "indexing_duration_ms": {
+      "avg_delta_ms": -15.420083989738487,
+      "max_delta_ms": -15.420083989738487
+    },
+    "parsing_duration_ms": {
+      "avg_delta_ms": -4.03241650928976,
+      "max_delta_ms": -7.943625008920208
+    },
+    "reranking_latency_ms": {
+      "avg_delta_ms": -0.017875994672067463,
+      "max_delta_ms": -0.017875994672067463
+    },
+    "retrieval_latency_ms": {
+      "avg_delta_ms": -0.06056966473503658,
+      "max_delta_ms": -0.16445800429210067
+    },
+    "sandbox_execution_time_ms": {
+      "avg_delta_ms": -227.4547910055844,
+      "max_delta_ms": -227.4547910055844
+    }
+  },
+  "retrieval_metrics": {
+    "after": {
+      "mrr": 1.0,
+      "ndcg_at_10": 1.0,
+      "ndcg_at_5": 1.0,
+      "recall_at_10": 1.0,
+      "recall_at_5": 1.0
+    },
+    "before": {
+      "mrr": 1.0,
+      "ndcg_at_10": 1.0,
+      "ndcg_at_5": 1.0,
+      "recall_at_10": 1.0,
+      "recall_at_5": 1.0
+    }
+  }
+}
