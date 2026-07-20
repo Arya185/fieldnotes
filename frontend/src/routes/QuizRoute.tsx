@@ -1,5 +1,5 @@
 import { EmptyState } from "../components/EmptyState";
-import type { QuizReviewItem, QuizState } from "../lib/appState";
+import type { QuizReviewItem, QuizState } from "../lib/appState/types";
 
 interface ConceptSummaryItem {
   id: string;

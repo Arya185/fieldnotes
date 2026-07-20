@@ -5,7 +5,7 @@ import type {
   QuizState,
   SourceNavItem,
   SourceViewState,
-} from "../lib/appState";
+} from "../lib/appState/types";
 import type { ArtifactCard, NotebookResponse } from "../types";
 
 interface ContextPanelRouteProps {

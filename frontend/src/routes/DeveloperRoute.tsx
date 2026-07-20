@@ -1,4 +1,4 @@
-import type { ChatMessage } from "../lib/appState";
+import type { ChatMessage } from "../lib/appState/types";
 import type { BenchmarkSummary } from "../types";
 
 interface DeveloperRouteProps {

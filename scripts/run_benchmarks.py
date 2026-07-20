@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import argparse
 import subprocess
 import sys
 import tempfile
@@ -56,8 +57,52 @@ def build_csv_workspace(root: Path) -> None:
     (root / "notes.txt").write_text("Trial 2 damping explanation", encoding="utf-8")
 
 
+def build_retrieval_benchmark(workspace: Path) -> RetrievalBenchmark:
+    notes_txt = workspace / "notes.txt"
+    if notes_txt.exists():
+        relative_path = "notes.txt"
+        query = "damping explanation"
+        anchor = "block1/b1"
+        return RetrievalBenchmark(
+            query=query,
+            relevant_anchors={f"{file_id_for_path(relative_path)}#{anchor}"},
+            relevance_by_anchor={f"{file_id_for_path(relative_path)}#{anchor}": 2},
+        )
+
+    notes_md = workspace / "notes.md"
+    if notes_md.exists():
+        relative_path = "notes.md"
+        query = "pendulum investigation"
+        anchor = "s2/b1"
+        return RetrievalBenchmark(
+            query=query,
+            relevant_anchors={f"{file_id_for_path(relative_path)}#{anchor}"},
+            relevance_by_anchor={f"{file_id_for_path(relative_path)}#{anchor}": 2},
+        )
+
+    first_text_file = next(
+        (
+            path
+            for path in sorted(workspace.rglob("*"))
+            if path.is_file() and path.suffix.lower() in {".md", ".txt", ".csv"}
+        ),
+        None,
+    )
+    if first_text_file is None:
+        return RetrievalBenchmark(query="workspace", relevant_anchors=set(), relevance_by_anchor={})
+
+    relative_path = first_text_file.relative_to(workspace).as_posix()
+    anchor = "block1/b1"
+    return RetrievalBenchmark(
+        query=first_text_file.stem.replace("_", " "),
+        relevant_anchors={f"{file_id_for_path(relative_path)}#{anchor}"},
+        relevance_by_anchor={f"{file_id_for_path(relative_path)}#{anchor}": 1},
+    )
+
+
 def run_benchmarks(
     *,
+    workspace: Path | None = None,
     command_runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> dict:
     previous = load_benchmark_results(RESULTS_PATH)
@@ -77,25 +122,22 @@ def run_benchmarks(
             f"Frontend build benchmark failed: {frontend_build.stderr.strip() or frontend_build.stdout.strip()}"
         )
     with tempfile.TemporaryDirectory() as temp_dir:
-        workspace = Path(temp_dir) / "benchmark_workspace"
-        build_csv_workspace(workspace)
-        run_indexing(workspace, "workspace_benchmark", EventStreamHub())
+        benchmark_workspace = workspace
+        if benchmark_workspace is None:
+            benchmark_workspace = Path(temp_dir) / "benchmark_workspace"
+            build_csv_workspace(benchmark_workspace)
 
-        connection = connect_sqlite(workspace / ".fieldnotes" / "fieldnotes.db")
+        run_indexing(benchmark_workspace, "workspace_benchmark", EventStreamHub())
+
+        connection = connect_sqlite(benchmark_workspace / ".fieldnotes" / "fieldnotes.db")
         try:
             provider = HybridProvider(connection, mode="hybrid", bm25_weight=0.5, vector_weight=0.5)
             reranker = DeterministicReranker()
-            file_id = file_id_for_path("notes.txt")
+            retrieval_benchmark = build_retrieval_benchmark(benchmark_workspace)
             retrieval_comparison = compare_reranking(
                 provider,
                 reranker,
-                [
-                    RetrievalBenchmark(
-                        query="damping explanation",
-                        relevant_anchors={f"{file_id}#block1/b1"},
-                        relevance_by_anchor={f"{file_id}#block1/b1": 2},
-                    )
-                ],
+                [retrieval_benchmark],
             )
 
             plan = ExecutionPlan(
@@ -112,9 +154,9 @@ def run_benchmarks(
             context = Executor().execute(
                 plan=plan,
                 question="Why damping changes?",
-                workspace_root=workspace,
-                artifacts_dir=workspace / ".fieldnotes" / "artifacts",
-                db_path=workspace / ".fieldnotes" / "fieldnotes.db",
+                workspace_root=benchmark_workspace,
+                artifacts_dir=benchmark_workspace / ".fieldnotes" / "artifacts",
+                db_path=benchmark_workspace / ".fieldnotes" / "fieldnotes.db",
                 answer_id="benchmark_answer",
                 retrieval_provider=provider,
                 llm_client=FakeLLMClient(),
@@ -164,7 +206,16 @@ def build_regression(previous: dict | None, current_latency: dict) -> dict:
 
 
 def main() -> None:
-    result = run_benchmarks()
+    parser = argparse.ArgumentParser(description="Run Fieldnotes benchmarks.")
+    parser.add_argument(
+        "--workspace",
+        type=Path,
+        help="Optional workspace path to benchmark. Defaults to built-in minimal fixture.",
+    )
+    args = parser.parse_args()
+
+    benchmark_workspace = args.workspace.resolve() if args.workspace is not None else None
+    result = run_benchmarks(workspace=benchmark_workspace)
     log_line = structured_log(
         component="benchmark_runner",
         severity="info",

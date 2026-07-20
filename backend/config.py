@@ -71,6 +71,12 @@ DEFAULT_VERBOSE_TRACING = "0"
 DEFAULT_USE_FAKE_LLM = "0"
 DEFAULT_OPENAI_MODEL = "gpt-5"
 DEFAULT_OPENAI_API_KEY = ""
+DEFAULT_TRUSTED_ORIGINS = (
+    "http://localhost:5173,"
+    "http://127.0.0.1:5173,"
+    "http://localhost:3000,"
+    "http://127.0.0.1:3000"
+)
 
 logger = logging.getLogger("fieldnotes.startup")
 
@@ -88,6 +94,14 @@ VERBOSE_TRACING = os.environ.get("FIELDNOTES_VERBOSE_TRACING", DEFAULT_VERBOSE_T
 USE_FAKE_LLM = os.environ.get("FIELDNOTES_USE_FAKE_LLM", DEFAULT_USE_FAKE_LLM)
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", DEFAULT_OPENAI_MODEL)
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", DEFAULT_OPENAI_API_KEY)
+TRUSTED_ORIGINS = frozenset(
+    origin
+    for origin in (
+        item.strip()
+        for item in os.environ.get("FIELDNOTES_TRUSTED_ORIGINS", DEFAULT_TRUSTED_ORIGINS).split(",")
+    )
+    if origin
+)
 
 
 class ConfigurationError(ValueError):

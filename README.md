@@ -1,6 +1,6 @@
 # Fieldnotes
 
-Fieldnotes `1.0.0-beta.1` is local-first AI learning workspace for course folders. Backend indexes course files into local SQLite + retrieval stores. Frontend exposes chat, notebook, quiz, source viewer, developer diagnostics. RC1 hardens release path without changing public APIs.
+Student with folder full of course PDFs, slides, notes, and CSVs gets grounded answers and quizzes instead of pasting fragments into generic chatbot. Fieldnotes stays local-first, cites source passages for every claim, and keeps outputs traceable back to workspace files. Frontend exposes chat, notebook, quiz, source viewer, developer diagnostics.
 
 ## Demo
 
@@ -12,15 +12,42 @@ Fieldnotes `1.0.0-beta.1` is local-first AI learning workspace for course folder
 
 ![Developer diagnostics panel screenshot placeholder](docs/images/screenshot-developer-diagnostics.png)
 
-## Security
-
-Generated analysis code runs in restricted sandbox. [backend/sandbox/runtime.py](backend/sandbox/runtime.py) parses scripts with Python AST, allowlists importable modules, blocks dangerous builtins and name references, and routes file access through workspace-jailing helpers plus artifact-only writes. [backend/sandbox/containment.py](backend/sandbox/containment.py) adds OS-level process containment with subprocess timeouts, stdout/stderr caps, and platform-specific process limits. Adversarial coverage lives in [tests/test_sandbox_security.py](tests/test_sandbox_security.py), including path traversal, absolute-path, symlink-escape, and Windows-specific containment checks.
-
-State-changing backend routes reject browser `Origin` and `Referer` headers and FastAPI CORS middleware allows no browser origins, so `localhost` binding alone is not trusted as safety boundary. App still has no authentication and is designed as single-user local tool, not public deployment target.
-
 ## Why Responses API
 
-[backend/agent/llm.py](backend/agent/llm.py) uses OpenAI Responses API for function-calling retrieval (`search_index`), strict structured outputs via `json_schema` with `strict: true`, and streamed grounded answer generation.
+[backend/agent/llm.py](backend/agent/llm.py) uses OpenAI Responses API for function-calling retrieval via `search_index`, strict structured outputs via `json_schema` with `strict: true` for intent routing, quiz generation, and concept extraction, and streamed grounded answer generation. Retrieval path combines BM25, embeddings, and reranking so answers stay tied to best matching workspace passages before response generation.
+
+> **No OpenAI key?** App runs in deterministic fake-LLM mode automatically. No cost, no key needed to try it.
+
+After indexing `demo_course/` and substituting returned `workspace_id`, `/ask` streams SSE like this:
+```bash
+curl -N -X POST http://127.0.0.1:8000/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"workspace_id":"<workspace_id>","question":"What is this course about?"}'
+
+data: {"event":"intent","answer_id":"answer_...","intent":"retrieve","targets":[],"connect":false}
+data: {"event":"step","answer_id":"answer_...","step":"retrieval","label":"searching selected workspace","status":"started"}
+data: {"event":"token","answer_id":"answer_...","text":"This course introduces grounded study workflows over local course files."}
+data: {"event":"artifact","answer_id":"answer_...","artifact_id":"...","kind":"explainer","title":"Answer: What is this course about?","url":"/artifact/..."}
+data: {"event":"citations","answer_id":"answer_...","chips":[{"chip_type":"document","label":"intro.txt (s1)","anchor":"<file_id>#s1"}]}
+data: {"event":"done","answer_id":"answer_..."}
+```
+
+## Quick Start
+
+Start backend:
+
+```bash
+python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+```
+
+Start frontend dev server:
+
+```bash
+cd frontend
+npm run dev
+```
+
+Vite dev server proxies API requests to `http://127.0.0.1:8000` by default. No `VITE_API_BASE_URL` needed for local development.
 
 ## Capabilities
 
@@ -30,6 +57,14 @@ State-changing backend routes reject browser `Origin` and `Referer` headers and 
 - Notebook artifact persistence for explainers, scripts, charts, quiz results
 - Source reopening by persisted anchor
 - Release smoke verification and benchmark tooling
+
+## Security
+
+Generated analysis code runs in restricted sandbox. [backend/sandbox/runtime.py](backend/sandbox/runtime.py) parses scripts with Python AST, allowlists importable modules, blocks dangerous builtins and name references, and routes file access through workspace-jailing helpers plus artifact-only writes. [backend/sandbox/containment.py](backend/sandbox/containment.py) adds OS-level process containment with subprocess timeouts, stdout/stderr caps, and platform-specific process limits. Adversarial coverage lives in [tests/test_sandbox_security.py](tests/test_sandbox_security.py), including path traversal, absolute-path, symlink-escape, and Windows-specific containment checks.
+
+This is AST-based allowlist sandbox, not formally verified sandbox boundary. It mitigates escape techniques covered by [tests/test_sandbox_security.py](tests/test_sandbox_security.py), including path traversal, symlink escape, blocked dunder and builtin access, and resource exhaustion, but generated-code execution should still be treated as trusted-input-only feature rather than exposed to untrusted network input.
+
+State-changing backend routes allow-list only trusted local frontend origins (`localhost` / `127.0.0.1` dev and container UI ports) and reject other browser `Origin` or `Referer` values; FastAPI CORS middleware still allows no browser origins by default. App still has no authentication and is designed as single-user local tool, not public deployment target.
 
 ## Version
 
@@ -94,14 +129,6 @@ FIELDNOTES_USE_FAKE_LLM=1
 
 Start with [docs/beta-onboarding.md](docs/beta-onboarding.md). It is single path for external beta users and points to install, demo workflow, feedback template, known issues, and release notes.
 
-## Quick Start
-
-Start backend:
-
-```bash
-python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
-```
-
 ## Docker
 
 Backend-only container:
@@ -110,15 +137,6 @@ Backend-only container:
 docker build -t fieldnotes-backend .
 docker run --rm -p 8000:8000 fieldnotes-backend
 ```
-
-Start frontend dev server:
-
-```bash
-cd frontend
-npm run dev
-```
-
-Vite dev server proxies API requests to `http://127.0.0.1:8000` by default. No `VITE_API_BASE_URL` needed for local development.
 
 Health check:
 
@@ -180,24 +198,24 @@ Built-in `scripts/run_benchmarks.py` minimal fixture:
 
 - Indexed files: `2`
 - Indexed chunks: `2`
-- Indexing time: `27.79 ms`
-- Ask execution time (`executor_latency_ms`): `417.96 ms`
-- Retrieval latency: `0.17 ms`
-- Sandbox execution time: `416.74 ms`
+- Indexing time: `17.39 ms`
+- Ask execution time (`executor_latency_ms`): `533.68 ms`
+- Retrieval latency: `0.15 ms`
+- Sandbox execution time: `532.20 ms`
 
-Larger synthetic corpus comparison:
+`demo_course/` via `python scripts/run_benchmarks.py --workspace demo_course`:
 
-- Corpus size: `120` generated files with mixed `md`, `txt`, and `csv`
-- Indexed chunks: `247`
-- Indexing time: `163.42 ms`
-- Ask execution time (`executor_latency_ms`): `420.40 ms`
-- Retrieval latency: `7.91 ms`
-- Sandbox execution time: `381.63 ms`
+- Indexed files: `3`
+- Indexed chunks: `6`
+- Indexing time: `53.77 ms`
+- Ask execution time (`executor_latency_ms`): `508.81 ms`
+- Retrieval latency: `0.25 ms`
+- Sandbox execution time: `507.27 ms`
 
 Notes:
 
-- `scripts/run_benchmarks.py` currently hardcodes its own tiny temporary workspace; it does not benchmark `demo_course/`.
-- Larger-corpus numbers above were captured by running same backend benchmark path on generated local corpus, with same fake-LLM executor flow and frontend build step.
+- Both entries above use same fake-LLM executor flow and include frontend build step inside benchmark run.
+- `scripts/run_benchmarks.py` now accepts optional `--workspace` path while keeping minimal built-in fixture as default behavior.
 
 ## Documentation Index
 

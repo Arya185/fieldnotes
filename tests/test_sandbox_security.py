@@ -57,6 +57,35 @@ class SandboxSecurityTests(unittest.TestCase):
     def test_open_builtin_fails(self) -> None:
         self._assert_violation("open('/etc/passwd').read()\nwrite_result({'summary': 'bad', 'metrics': {}})\n")
 
+    def test_builtins_open_concat_bypass_fails(self) -> None:
+        self._assert_violation(
+            "fn = __builtins__['o' + 'pen']\n"
+            "text = fn('safe.txt').read()\n"
+            "write_result({'summary': text, 'metrics': {}})\n"
+        )
+
+    def test_builtins_import_concat_bypass_fails(self) -> None:
+        self._assert_violation(
+            "imp = __builtins__['__im' + 'port__']\n"
+            "os = imp('os')\n"
+            "write_result({'summary': str(os.listdir('.')), 'metrics': {}})\n"
+        )
+
+    def test_builtins_import_format_bypass_fails(self) -> None:
+        self._assert_violation(
+            "key = '{}{}'.format('__im', 'port__')\n"
+            "imp = __builtins__[key]\n"
+            "os = imp('os')\n"
+            "write_result({'summary': str(os.listdir('.')), 'metrics': {}})\n"
+        )
+
+    def test_dunder_attribute_name_constructed_indirectly_still_fails(self) -> None:
+        self._assert_violation(
+            "name = '__' + 'getattribute__'\n"
+            "value = object.__getattribute__(pd, name)\n"
+            "write_result({'summary': str(value), 'metrics': {}})\n"
+        )
+
     def test_windows_drive_path_fails(self) -> None:
         self._assert_violation("read_text('C:\\\\Windows\\\\System32\\\\drivers\\\\etc\\\\hosts')\nwrite_result({'summary': 'bad', 'metrics': {}})\n")
 

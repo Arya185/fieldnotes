@@ -7,6 +7,7 @@ import json
 import sqlite3
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -14,7 +15,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from backend.agent.llm import LLMClient
-from backend.config import FIELDNOTES_VERSION, ConfigurationError, determine_llm_mode, validate_runtime_configuration
+from backend.config import (
+    FIELDNOTES_VERSION,
+    TRUSTED_ORIGINS,
+    ConfigurationError,
+    determine_llm_mode,
+    validate_runtime_configuration,
+)
 from backend.db import connect_sqlite, latest_storage_warning_message
 from backend.errors import error_response, request_id_for
 from backend.indexer.events import run_manager
@@ -155,6 +162,7 @@ async def get_index_events(run_id: str) -> StreamingResponse:
 @app.post("/ask")
 async def post_ask(request: AskRequest, http_request: Request) -> StreamingResponse:
     """Stream grounded assistant output for a user question."""
+    _reject_browser_origin(http_request)
     return StreamingResponse(
         stream_ask_events(request, http_request, _get_llm_client, _sse),
         media_type="text/event-stream",
@@ -164,6 +172,7 @@ async def post_ask(request: AskRequest, http_request: Request) -> StreamingRespo
 @app.post("/quiz/start")
 async def post_quiz_start(request: QuizRequest, http_request: Request) -> StreamingResponse:
     """Start one grounded quiz question for the selected workspace."""
+    _reject_browser_origin(http_request)
     return StreamingResponse(
         stream_quiz_start_events(request, http_request, _get_llm_client, _sse),
         media_type="text/event-stream",
@@ -265,8 +274,16 @@ def _get_llm_client():
 def _reject_browser_origin(request: Request) -> None:
     origin = request.headers.get("origin")
     referer = request.headers.get("referer")
-    if origin or referer:
-        raise HTTPException(
-            status_code=403,
-            detail="Browser-originated state-changing requests are not allowed.",
-        )
+    if origin and origin not in TRUSTED_ORIGINS:
+        raise HTTPException(status_code=403, detail="Untrusted browser origin.")
+    if referer:
+        referer_origin = _origin_from_url(referer)
+        if referer_origin not in TRUSTED_ORIGINS:
+            raise HTTPException(status_code=403, detail="Untrusted browser origin.")
+
+
+def _origin_from_url(value: str) -> str:
+    parts = urlsplit(value)
+    if not parts.scheme or not parts.netloc:
+        return ""
+    return f"{parts.scheme}://{parts.netloc}"

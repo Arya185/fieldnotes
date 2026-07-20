@@ -1,5 +1,5 @@
 import { EmptyState } from "../components/EmptyState";
-import type { SourceViewState } from "../lib/appState";
+import type { SourceViewState } from "../lib/appState/types";
 
 interface SourceRouteProps {
   allCitationsCount: number;

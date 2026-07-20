@@ -1,6 +1,6 @@
 import { EmptyState } from "../components/EmptyState";
 import { MarkdownBlock } from "../lib/markdown";
-import type { ArtifactPreview, NoteOverrides } from "../lib/appState";
+import type { ArtifactPreview, NoteOverrides } from "../lib/appState/types";
 import type { ArtifactCard, NotebookResponse } from "../types";
 
 interface NotebookRouteProps {

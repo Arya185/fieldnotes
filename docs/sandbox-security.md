@@ -6,6 +6,8 @@ Sandboxing is not only safety boundary. Backend also rejects browser-originated 
 
 Fieldnotes executes generated analysis code through `backend/sandbox/runner.py` and `backend/sandbox/runtime.py`.
 
+This is AST-based allowlist sandbox, not formally verified sandbox boundary. It mitigates escape techniques covered by `tests/test_sandbox_security.py`, including path traversal, symlink escape, blocked dunder and builtin access, and resource exhaustion, but generated-code execution should still be treated as trusted-input-only feature rather than exposed to untrusted network input.
+
 ## Guarantees
 
 - Generated code runs in separate Python subprocess, never in backend process.

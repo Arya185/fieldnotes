@@ -150,9 +150,16 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertIn("request_id", response.json())
         self.assertNotIn("detail", response.json())
 
-    def test_index_rejects_foreign_origin_header(self) -> None:
+    def test_index_allows_trusted_origin_and_rejects_foreign_origin(self) -> None:
         ws = self.base / "origin-block"
         build_workspace(ws, "alpha.txt", "alpha")
+
+        trusted = self.client.post(
+            "/index",
+            json={"folder_path": str(ws)},
+            headers={"Origin": "http://127.0.0.1:5173"},
+        )
+        self.assertEqual(trusted.status_code, 202)
 
         response = self.client.post(
             "/index",

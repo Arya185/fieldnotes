@@ -1,5 +1,5 @@
 import { MarkdownBlock } from "../lib/markdown";
-import type { ChatMessage, SourceAccordionState, SourceViewState } from "../lib/appState";
+import type { ChatMessage, SourceAccordionState, SourceViewState } from "../lib/appState/types";
 import type { ArtifactCard, CitationChip } from "../types";
 
 interface ChatRouteProps {
