@@ -174,16 +174,30 @@ Optional live OpenAI validation runs in separate `live-openai-validation` job on
 
 ## Performance
 
-Measured locally on `2026-07-20` against bundled `demo_course/` in `fake-LLM mode`:
+Measured locally on `2026-07-20` in `fake-LLM mode`.
 
-- Indexing time: `40.60 ms`
-- Ask execution time: `368.02 ms`
-- Retrieval latency: `0.33 ms`
-- Sandbox execution time: `366.66 ms`
-- Indexed files: `3`
-- Indexed chunks: `6`
+Built-in `scripts/run_benchmarks.py` minimal fixture:
 
-These numbers come from local backend timing only. In this environment, full `scripts/run_benchmarks.py` frontend-build step could not complete because frontend package-manager tooling was unavailable offline, so README reports actual fake-mode backend timings from bundled sample workspace instead.
+- Indexed files: `2`
+- Indexed chunks: `2`
+- Indexing time: `27.79 ms`
+- Ask execution time (`executor_latency_ms`): `417.96 ms`
+- Retrieval latency: `0.17 ms`
+- Sandbox execution time: `416.74 ms`
+
+Larger synthetic corpus comparison:
+
+- Corpus size: `120` generated files with mixed `md`, `txt`, and `csv`
+- Indexed chunks: `247`
+- Indexing time: `163.42 ms`
+- Ask execution time (`executor_latency_ms`): `420.40 ms`
+- Retrieval latency: `7.91 ms`
+- Sandbox execution time: `381.63 ms`
+
+Notes:
+
+- `scripts/run_benchmarks.py` currently hardcodes its own tiny temporary workspace; it does not benchmark `demo_course/`.
+- Larger-corpus numbers above were captured by running same backend benchmark path on generated local corpus, with same fake-LLM executor flow and frontend build step.
 
 ## Documentation Index
 
