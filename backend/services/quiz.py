@@ -18,7 +18,6 @@ from backend.models import (
     QuestionEvent,
     QuizAnswerRequest,
     QuizDoneEvent,
-    QuizEvent,
     QuizRequest,
 )
 from backend.storage import (

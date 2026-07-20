@@ -17,7 +17,7 @@ None confirmed.
 - Category: installation
 - Reproducibility: always
 - Impact: beta users must install Python and Node.js manually
-- Workaround: follow [installation.md](/Users/aryapatel/arya/Programming/All Hackathons/Fieldnotes/docs/installation.md)
+- Workaround: follow [installation.md](installation.md)
 - Planned fix: package distribution after beta validation
 - Target release: post-`v1.0.0`
 - Blocking status: no, if onboarding remains clear
@@ -49,7 +49,7 @@ None confirmed.
 - Category: usability
 - Reproducibility: always before beta onboarding doc
 - Impact: users had to jump between README, installation guide, quickstart, and release notes
-- Workaround: use [beta-onboarding.md](/Users/aryapatel/arya/Programming/All Hackathons/Fieldnotes/docs/beta-onboarding.md)
+- Workaround: use [beta-onboarding.md](beta-onboarding.md)
 - Planned fix: completed in beta program 1
 - Target release: fixed in `1.0.0-beta.1`
 - Blocking status: no

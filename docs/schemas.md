@@ -151,7 +151,7 @@ interface ConceptUpdate {
 
 Ordering guarantee per answer: `intent` → one or more `step` → interleaved `token`/`artifact` → `citations` → `concepts` → `done`. `error` may replace any tail and terminate stream cleanly.
 
-### 2.3 Channel: quiz — `POST /quiz` (SSE response)
+### 2.3 Channel: quiz — `POST /quiz/start` (SSE response)
 
 ```ts
 type QuizEvent =
@@ -310,7 +310,7 @@ Derived directly from the above; listed for completeness. Codex should generate 
 | `POST /index` | `{ "folder_path": str }` | `202` + `{ status, workspace_id, run_id, events }` |
 | `GET /index/events/{run_id}` | — | SSE stream of `IndexEvent` |
 | `POST /ask` | `{ "workspace_id": str, "question": str }` | SSE stream of `AskEvent` |
-| `POST /quiz`, `POST /quiz/start` | `{ "workspace_id": str, "concept_ids": [str] \| null }` (null = all shaky, then touched) | SSE stream of `QuizEvent` |
+| `POST /quiz/start` | `{ "workspace_id": str, "concept_ids": [str] \| null }` (null = all shaky, then touched) | SSE stream of `QuizEvent` |
 | `POST /quiz/answer` | `{ "workspace_id": str, "attempt_id": str, "chosen_index": int }` | SSE stream containing `graded` then `quiz_done` |
 | `GET /notebook` | query: `workspace_id` | `{ "artifacts": ArtifactCard[] }` |
 | `GET /artifact/{id}` | query: `workspace_id` | payload (PNG / script text / JSON) |

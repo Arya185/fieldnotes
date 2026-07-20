@@ -14,13 +14,13 @@ Fieldnotes `1.0.0-beta.1` is local-first AI learning workspace for course folder
 
 ## Security
 
-Generated analysis code runs in restricted sandbox. [backend/sandbox/runtime.py](/Users/aryapatel/arya/Programming/All%20Hackathons/Fieldnotes/backend/sandbox/runtime.py) parses scripts with Python AST, allowlists importable modules, blocks dangerous builtins and name references, and routes file access through workspace-jailing helpers plus artifact-only writes. [backend/sandbox/containment.py](/Users/aryapatel/arya/Programming/All%20Hackathons/Fieldnotes/backend/sandbox/containment.py) adds OS-level process containment with subprocess timeouts, stdout/stderr caps, and platform-specific process limits. Adversarial coverage lives in [tests/test_sandbox_security.py](/Users/aryapatel/arya/Programming/All%20Hackathons/Fieldnotes/tests/test_sandbox_security.py), including path traversal, absolute-path, symlink-escape, and Windows-specific containment checks.
+Generated analysis code runs in restricted sandbox. [backend/sandbox/runtime.py](backend/sandbox/runtime.py) parses scripts with Python AST, allowlists importable modules, blocks dangerous builtins and name references, and routes file access through workspace-jailing helpers plus artifact-only writes. [backend/sandbox/containment.py](backend/sandbox/containment.py) adds OS-level process containment with subprocess timeouts, stdout/stderr caps, and platform-specific process limits. Adversarial coverage lives in [tests/test_sandbox_security.py](tests/test_sandbox_security.py), including path traversal, absolute-path, symlink-escape, and Windows-specific containment checks.
 
-App binds to `localhost`, has no authentication, and is designed as single-user local tool, not public deployment target.
+State-changing backend routes reject browser `Origin` and `Referer` headers and FastAPI CORS middleware allows no browser origins, so `localhost` binding alone is not trusted as safety boundary. App still has no authentication and is designed as single-user local tool, not public deployment target.
 
 ## Why Responses API
 
-[backend/agent/llm.py](/Users/aryapatel/arya/Programming/All%20Hackathons/Fieldnotes/backend/agent/llm.py) uses OpenAI Responses API for function-calling retrieval (`search_index`), strict structured outputs via `json_schema` with `strict: true`, and streamed grounded answer generation.
+[backend/agent/llm.py](backend/agent/llm.py) uses OpenAI Responses API for function-calling retrieval (`search_index`), strict structured outputs via `json_schema` with `strict: true`, and streamed grounded answer generation.
 
 ## Capabilities
 
@@ -34,6 +34,7 @@ App binds to `localhost`, has no authentication, and is designed as single-user 
 ## Version
 
 - Release: `1.0.0-beta.1`
+- Tested Python version: `3.12`
 - Backend version source: `backend/config.py`
 - Frontend version source: `frontend/package.json`
 

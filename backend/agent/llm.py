@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Iterator
 
 from openai import APITimeoutError, AuthenticationError, OpenAI
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from backend.agent.executor import ExecutionContext, Executor
 from backend.agent.planner import ExecutionPlan, Planner, default_plan
@@ -16,7 +16,7 @@ from backend.config import OPENAI_MODEL
 from backend.indexer.bm25 import RetrievalChunk, RetrievalProvider
 from backend.indexer.reranker import DeterministicReranker
 from backend.models import ArtifactEvent, ConceptUpdate, QuizQuestionSchema, RouteIntentSchema
-from backend.release import FakeLLMClient
+from backend.release import FakeLLMClient as FakeLLMClient
 from backend.telemetry.tracing import metrics_registry, trace_collector
 
 
@@ -46,6 +46,23 @@ class AnalysisScriptSchema(BaseModel):
     title: str
     needs_chart: bool
     script: str
+
+
+class ConceptCandidateSchema(BaseModel):
+    """Structured grounded concept candidate."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    source_anchor: str
+
+
+class ConceptExtractionSchema(BaseModel):
+    """Structured output for grounded concept extraction."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    concepts: list[ConceptCandidateSchema] = Field(default_factory=list, max_length=3)
 
 
 @dataclass(frozen=True)
@@ -455,35 +472,63 @@ class LLMClient:
         question: str,
         retrieval_results: list[RetrievalChunk],
     ) -> list[ConceptUpdate]:
-        """Derive concrete concept updates from the grounded answer context."""
+        """Derive grounded concept updates from retrieved passages."""
 
-        names: list[str] = []
-        for retrieval in retrieval_results:
-            for candidate in re.findall(r"[A-Za-z][A-Za-z0-9_-]{3,}", retrieval.chunk):
-                normalized = candidate.lower()
-                if normalized not in names:
-                    names.append(normalized)
-                if len(names) >= 3:
-                    break
-            if len(names) >= 3:
-                break
+        if not retrieval_results:
+            return []
 
-        if not names:
-            for candidate in re.findall(r"[A-Za-z][A-Za-z0-9_-]{3,}", question):
-                normalized = candidate.lower()
-                if normalized not in names:
-                    names.append(normalized)
-                if len(names) >= 3:
-                    break
-
-        return [
-            ConceptUpdate(
-                concept_id=_concept_id(name),
-                name=name.replace("_", " "),
-                state="touched",
+        context = "\n\n".join(
+            [
+                f"[{index}] path={result.relative_path} source_anchor={result.file_id}#{result.anchor}\n{result.chunk}"
+                for index, result in enumerate(retrieval_results, start=1)
+            ]
+        )
+        response = self.client.responses.create(
+            model=self.model,
+            store=False,
+            max_output_tokens=180,
+            input=[
+                {
+                    "role": "developer",
+                    "content": (
+                        "Extract up to 3 short grounded concept names from retrieved passages only. "
+                        "Each concept must use exactly one provided source_anchor. "
+                        "Return no concept if support is weak."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": f"Question:\n{question}\n\nRetrieved passages:\n{context}",
+                },
+            ],
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": "concept_extraction",
+                    "schema": ConceptExtractionSchema.model_json_schema(),
+                    "strict": True,
+                }
+            },
+        )
+        extracted = ConceptExtractionSchema.model_validate_json(response.output_text)
+        valid_anchors = {f"{result.file_id}#{result.anchor}" for result in retrieval_results}
+        updates: list[ConceptUpdate] = []
+        seen_names: set[str] = set()
+        for concept in extracted.concepts:
+            normalized_name = concept.name.strip().lower()
+            if not normalized_name or normalized_name in seen_names:
+                continue
+            if concept.source_anchor not in valid_anchors:
+                continue
+            seen_names.add(normalized_name)
+            updates.append(
+                ConceptUpdate(
+                    concept_id=_concept_id(normalized_name),
+                    name=concept.name.strip(),
+                    state="touched",
+                )
             )
-            for name in names
-        ]
+        return updates
 
 
 def _iter_function_calls(response) -> Iterator[dict[str, str]]:

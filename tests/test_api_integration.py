@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from backend.db import connect_sqlite
 from backend.main import app
 from backend.indexer.workspace_manager import WorkspaceManager, workspace_manager
+from backend.indexer.bm25 import RetrievalChunk
 from backend.models import ConceptUpdate, QuizQuestionSchema, RouteIntentSchema
 from backend.release import FakeLLMClient as DeterministicFakeLLMClient
 
@@ -148,6 +149,19 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertEqual(response.json()["code"], "WORKSPACE_NOT_FOUND")
         self.assertIn("request_id", response.json())
         self.assertNotIn("detail", response.json())
+
+    def test_index_rejects_foreign_origin_header(self) -> None:
+        ws = self.base / "origin-block"
+        build_workspace(ws, "alpha.txt", "alpha")
+
+        response = self.client.post(
+            "/index",
+            json={"folder_path": str(ws)},
+            headers={"Origin": "https://evil.example"},
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["code"], "INVALID_REQUEST")
 
     def test_health_includes_registry_warning_when_recovery_occurred(self) -> None:
         with patch.object(workspace_manager, "last_recovery_warning", return_value="Registry file was corrupted and was recreated."):
@@ -292,7 +306,7 @@ class ApiIntegrationTests(unittest.TestCase):
         self.client.get(index["events"])
 
         quiz_start = self.client.post(
-            "/quiz",
+            "/quiz/start",
             json={"workspace_id": index["workspace_id"], "concept_ids": ["grounding"]},
         )
         start_payloads = parse_sse_payloads(quiz_start.text)
@@ -507,7 +521,7 @@ class ApiIntegrationTests(unittest.TestCase):
     def test_sse_live_api_failure_is_stable(self) -> None:
         class FailingLLM(FakeLLMClient):
             def classify_intent(self, question: str) -> RouteIntentSchema:
-                raise RuntimeError("OpenAI Responses API failed for gpt-5 at /Users/secret")
+                raise RuntimeError("OpenAI Responses API failed for gpt-5 at /private/secret")
 
         ws = self.base / "live_api_fail"
         build_workspace(ws, "alpha.txt", "alpha")
@@ -520,12 +534,12 @@ class ApiIntegrationTests(unittest.TestCase):
         error = payloads[-1]
         self.assertEqual(error["code"], "LIVE_API_UNAVAILABLE")
         self.assertNotIn("gpt-5", error["message"])
-        self.assertNotIn("/Users/secret", error["message"])
+        self.assertNotIn("/private/secret", error["message"])
 
     def test_sse_timeout_failure_is_stable(self) -> None:
         class TimeoutLLM(FakeLLMClient):
             def classify_intent(self, question: str) -> RouteIntentSchema:
-                raise TimeoutError("timed out at /Users/private")
+                raise TimeoutError("timed out at /private/data")
 
         ws = self.base / "timeout_fail"
         build_workspace(ws, "alpha.txt", "alpha")
@@ -537,11 +551,11 @@ class ApiIntegrationTests(unittest.TestCase):
             )
         error = payloads[-1]
         self.assertEqual(error["code"], "TIMEOUT")
-        self.assertNotIn("/Users/private", error["message"])
+        self.assertNotIn("/private/data", error["message"])
 
     def test_rest_sqlite_failure_is_stable_and_logs_diagnostics(self) -> None:
         with (
-            patch("backend.main.connect_sqlite", side_effect=sqlite3.DatabaseError("db broke at /Users/private/work.db")),
+            patch("backend.main.connect_sqlite", side_effect=sqlite3.DatabaseError("db broke at /private/work.db")),
             patch.object(workspace_manager, "get", return_value=type("Record", (), {"db_path": Path("x"), "artifacts_dir": Path("x"), "root": Path("x")})()),
             self.assertLogs("fieldnotes.api", level="ERROR") as logs,
         ):
@@ -549,13 +563,13 @@ class ApiIntegrationTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 500)
         self.assertEqual(response.json()["code"], "DATABASE_ERROR")
-        self.assertNotIn("/Users/private", response.text)
+        self.assertNotIn("/private/work.db", response.text)
         self.assertTrue(any("DatabaseError" in line for line in logs.output))
 
     def test_sse_unexpected_exception_is_stable(self) -> None:
         class ExplodingLLM(FakeLLMClient):
             def classify_intent(self, question: str) -> RouteIntentSchema:
-                raise RuntimeError("Traceback: boom at /Users/private/project")
+                raise RuntimeError("Traceback: boom at /private/project")
 
         ws = self.base / "explode"
         build_workspace(ws, "alpha.txt", "alpha")
@@ -568,7 +582,29 @@ class ApiIntegrationTests(unittest.TestCase):
         error = payloads[-1]
         self.assertEqual(error["code"], "INTERNAL_ERROR")
         self.assertNotIn("Traceback", json.dumps(error))
-        self.assertNotIn("/Users/private/project", json.dumps(error))
+        self.assertNotIn("/private/project", json.dumps(error))
+
+    def test_fake_llm_extract_concepts_returns_valid_concept_updates(self) -> None:
+        retrieval_results = [
+            RetrievalChunk(
+                chunk="Grounded passage about oscillation and damping.",
+                score=1.0,
+                anchor="block1/b1",
+                file_id="file_alpha",
+                relative_path="alpha.txt",
+            )
+        ]
+
+        updates = DeterministicFakeLLMClient().extract_concepts(
+            "What concept matters here?",
+            retrieval_results,
+        )
+
+        self.assertTrue(updates)
+        self.assertTrue(all(isinstance(update, ConceptUpdate) for update in updates))
+        self.assertTrue(all(update.concept_id for update in updates))
+        self.assertTrue(all(update.name for update in updates))
+        self.assertTrue(all(update.state in {"touched", "shaky"} for update in updates))
 
 
 if __name__ == "__main__":

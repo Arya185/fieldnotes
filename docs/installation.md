@@ -113,4 +113,4 @@ curl http://127.0.0.1:8000/health
 
 Note: `run.sh` is Unix-only helper. Windows should start backend and frontend directly.
 
-For external beta flow, continue with [beta-onboarding.md](/Users/aryapatel/arya/Programming/All Hackathons/Fieldnotes/docs/beta-onboarding.md).
+For external beta flow, continue with [beta-onboarding.md](beta-onboarding.md).

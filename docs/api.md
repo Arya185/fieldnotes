@@ -58,7 +58,7 @@ Streams `intent`, zero or more `step` and `token` events, zero or more `artifact
 
 ## Quiz
 
-### `POST /quiz` and `POST /quiz/start`
+### `POST /quiz/start`
 
 Both routes start one grounded question.
 

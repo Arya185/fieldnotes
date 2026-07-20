@@ -49,7 +49,7 @@ retrieved workspace chunks
   -> quiz-result artifact
 ```
 
-`POST /quiz` and `/quiz/start` stream a grounded question. `POST /quiz/answer` streams `graded` then `quiz_done`, updates concept state, and persists a quiz-result artifact. Notebook cards and artifact payloads are loaded through `/notebook` and `/artifact/{artifact_id}`.
+`POST /quiz/start` streams a grounded question. `POST /quiz/answer` streams `graded` then `quiz_done`, updates concept state, and persists a quiz-result artifact. Notebook cards and artifact payloads are loaded through `/notebook` and `/artifact/{artifact_id}`.
 
 ## Local-first boundary
 

@@ -1,5 +1,9 @@
 # Sandbox Security
 
+## Browser Request Boundary
+
+Sandboxing is not only safety boundary. Backend also rejects browser-originated state-changing requests on sensitive routes and configures FastAPI CORS with no allowed origins. This prevents unrelated webpages in same browser from firing cross-origin mutation requests against running local instance. `localhost` binding alone is not treated as sufficient protection.
+
 Fieldnotes executes generated analysis code through `backend/sandbox/runner.py` and `backend/sandbox/runtime.py`.
 
 ## Guarantees

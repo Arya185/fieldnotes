@@ -5,19 +5,18 @@ from __future__ import annotations
 import asyncio
 import json
 import sqlite3
-import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from backend.agent.llm import LLMClient
 from backend.config import FIELDNOTES_VERSION, ConfigurationError, determine_llm_mode, validate_runtime_configuration
 from backend.db import connect_sqlite, latest_storage_warning_message
-from backend.errors import error_response, request_id_for, sse_error_payload
-from backend.indexer.bm25 import RetrievalChunk
+from backend.errors import error_response, request_id_for
 from backend.indexer.events import run_manager
 from backend.indexer.pipeline import run_indexing
 from backend.indexer.workspace_manager import workspace_manager
@@ -31,16 +30,7 @@ from backend.models import (
     SourceResponse,
 )
 from backend.services.ask import stream_ask_events
-from backend.services.quiz import (
-    load_quiz_concept_names as _load_quiz_concept_names,
-    stream_quiz_answer_events,
-    stream_quiz_start_events,
-)
-from backend.services.retrieval import (
-    load_fallback_retrieval as _load_fallback_retrieval,
-    source_label as _source_label,
-)
-from backend.services.starters import build_refreshed_starters as _build_refreshed_starters
+from backend.services.quiz import stream_quiz_answer_events, stream_quiz_start_events
 from backend.storage import (
     load_all_artifacts,
     load_artifact_row,
@@ -68,6 +58,13 @@ async def lifespan(application: FastAPI):
 
 
 app = FastAPI(title="Fieldnotes API", version=FIELDNOTES_VERSION, lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 llm_client: LLMClient | object | None = None
 
 
@@ -117,9 +114,10 @@ async def get_health() -> dict[str, str]:
 
 
 @app.post("/index", status_code=202)
-async def post_index(request: IndexRequest) -> IndexAcceptedResponse:
+async def post_index(request: IndexRequest, http_request: Request) -> IndexAcceptedResponse:
     """Start background indexing run for a workspace folder."""
 
+    _reject_browser_origin(http_request)
     workspace_root = Path(request.folder_path).expanduser().resolve()
     workspace_record = workspace_manager.register(workspace_root)
     run_id, event_hub = run_manager.create_run()
@@ -163,7 +161,6 @@ async def post_ask(request: AskRequest, http_request: Request) -> StreamingRespo
     )
 
 
-@app.post("/quiz")
 @app.post("/quiz/start")
 async def post_quiz_start(request: QuizRequest, http_request: Request) -> StreamingResponse:
     """Start one grounded quiz question for the selected workspace."""
@@ -176,6 +173,7 @@ async def post_quiz_start(request: QuizRequest, http_request: Request) -> Stream
 @app.post("/quiz/answer")
 async def post_quiz_answer(request: QuizAnswerRequest, http_request: Request) -> StreamingResponse:
     """Grade one persisted quiz attempt and update concept state."""
+    _reject_browser_origin(http_request)
     return StreamingResponse(
         stream_quiz_answer_events(request, http_request, _sse),
         media_type="text/event-stream",
@@ -263,3 +261,12 @@ def _get_llm_client():
             llm_client = LLMClient()
     return llm_client
 
+
+def _reject_browser_origin(request: Request) -> None:
+    origin = request.headers.get("origin")
+    referer = request.headers.get("referer")
+    if origin or referer:
+        raise HTTPException(
+            status_code=403,
+            detail="Browser-originated state-changing requests are not allowed.",
+        )

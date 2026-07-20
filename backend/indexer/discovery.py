@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from backend.indexer.parsers import DiscoveredFile, SUPPORTED_FILE_TYPES
+from backend.indexer.parsers import DiscoveredFile, SUPPORTED_FILE_TYPES as SUPPORTED_FILE_TYPES
 
 
 SUPPORTED_SUFFIXES: dict[str, str] = {

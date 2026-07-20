@@ -8,8 +8,8 @@ This beta package includes:
 - `frontend/`
 - `demo_course/`
 - published docs under `docs/`
-- release notes: [release-notes-1.0.0-beta.1.md](/Users/aryapatel/arya/Programming/All Hackathons/Fieldnotes/docs/release-notes-1.0.0-beta.1.md)
-- known issues: [beta-known-issues.md](/Users/aryapatel/arya/Programming/All Hackathons/Fieldnotes/docs/beta-known-issues.md)
+- release notes: [release-notes-1.0.0-beta.1.md](release-notes-1.0.0-beta.1.md)
+- known issues: [beta-known-issues.md](beta-known-issues.md)
 
 ## 1. Prerequisites
 
@@ -21,7 +21,7 @@ If you only need offline smoke verification, set `FIELDNOTES_USE_FAKE_LLM=1`.
 
 ## 2. Install
 
-Follow [installation.md](/Users/aryapatel/arya/Programming/All Hackathons/Fieldnotes/docs/installation.md).
+Follow [installation.md](installation.md).
 
 ## 3. Start Fieldnotes
 
@@ -65,12 +65,12 @@ npm run dev
 
 ## 6. Report feedback
 
-Use [beta-feedback-template.md](/Users/aryapatel/arya/Programming/All Hackathons/Fieldnotes/docs/beta-feedback-template.md). Please include operating system, whether you used live mode or fake LLM mode, and exact steps to reproduce problems.
+Use [beta-feedback-template.md](beta-feedback-template.md). Please include operating system, whether you used live mode or fake LLM mode, and exact steps to reproduce problems.
 
 ## 7. Before filing bug
 
-- Check [troubleshooting.md](/Users/aryapatel/arya/Programming/All Hackathons/Fieldnotes/docs/troubleshooting.md)
-- Check [beta-known-issues.md](/Users/aryapatel/arya/Programming/All Hackathons/Fieldnotes/docs/beta-known-issues.md)
+- Check [troubleshooting.md](troubleshooting.md)
+- Check [beta-known-issues.md](beta-known-issues.md)
 - Run smoke check:
 
 ```bash

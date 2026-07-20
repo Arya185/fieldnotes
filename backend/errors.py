@@ -6,7 +6,6 @@ import json
 import logging
 import sqlite3
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException, Request
@@ -119,6 +118,8 @@ def _map_http_exception(exc: HTTPException) -> PublicError:
         return PublicError("WORKSPACE_NOT_FOUND", "Selected workspace was not found.", True, 404)
     if exc.status_code == 404:
         return PublicError("INVALID_REQUEST", "Requested resource was not found.", True, 404)
+    if exc.status_code == 403:
+        return PublicError("INVALID_REQUEST", "Request origin is not allowed.", True, 403)
     if exc.status_code == 400:
         return PublicError("INVALID_REQUEST", "Request could not be completed.", True, 400)
     return PublicError("INTERNAL_ERROR", "Something went wrong while processing the request.", False, exc.status_code)

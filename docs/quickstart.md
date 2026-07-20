@@ -68,4 +68,4 @@ Release verification:
 python scripts/release_check.py
 ```
 
-For full external beta flow, use [beta-onboarding.md](/Users/aryapatel/arya/Programming/All Hackathons/Fieldnotes/docs/beta-onboarding.md).
+For full external beta flow, use [beta-onboarding.md](beta-onboarding.md).
