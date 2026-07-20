@@ -10,8 +10,48 @@
     "passed": true
   },
   {
-    "check": "release verification",
-    "detail": "npm executable unavailable. Searched executable names: npm, npm.cmd, npx, npx.cmd. Current PATH: /Users/aryapatel/.codex/tmp/arg0/codex-arg0k4Ykrh:/Users/aryapatel/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/override:/usr/bin:/bin:/usr/sbin:/sbin:/Users/aryapatel/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/fallback:/Applications/Technical/ChatGPT.app/Contents/Resources. Current working directory: /Users/aryapatel/arya/Programming/All Hackathons/Fieldnotes. Python executable: /Users/aryapatel/arya/Programming/All Hackathons/Fieldnotes/.venv312/bin/python.",
-    "passed": false
+    "check": "frontend builds",
+    "detail": "vite build passed",
+    "passed": true
+  },
+  {
+    "check": "version consistency",
+    "detail": "1.0.0-beta.1",
+    "passed": true
+  },
+  {
+    "check": "documentation example commands",
+    "detail": "README + installation + quickstart",
+    "passed": true
+  },
+  {
+    "check": "workspace indexing succeeds",
+    "detail": "workspace_id=348786db-1dce-4f45-b5ab-379025011b37",
+    "passed": true
+  },
+  {
+    "check": "chat request succeeds",
+    "detail": "file_12dfac2a0a81c21d55e8f319#block3/b1",
+    "passed": true
+  },
+  {
+    "check": "quiz flow succeeds",
+    "detail": "file_12dfac2a0a81c21d55e8f319#block1/b1",
+    "passed": true
+  },
+  {
+    "check": "notebook loads",
+    "detail": "artifacts=6",
+    "passed": true
+  },
+  {
+    "check": "source viewer opens",
+    "detail": "notes.md block3/b1",
+    "passed": true
+  },
+  {
+    "check": "benchmark runner executes",
+    "detail": "scripts/release_artifacts/release_benchmarks.json",
+    "passed": true
   }
 ]
