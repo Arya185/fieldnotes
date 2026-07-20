@@ -6,85 +6,66 @@ on:
 
 jobs:
   verify:
-    name: Verify (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-latest
-          - macos-latest
-          - windows-latest
-
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-
     env:
+      OPENAI_API_KEY: ci-release-key
       FIELDNOTES_USE_FAKE_LLM: "1"
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install backend dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r backend/requirements.txt
-
-      - name: Install frontend dependencies
-        working-directory: frontend
+      - name: Install backend deps
+        run: python -m pip install -r backend/requirements.txt
+      - name: Install frontend deps
         run: npm ci
-
+        working-directory: frontend
       - name: Fake-mode validation
         run: echo "Running fake-mode validation on ${{ matrix.os }}"
-
       - name: Backend tests
         run: python -m unittest discover -s tests
-
       - name: Frontend tests
-        working-directory: frontend
         run: npm test
-
+        working-directory: frontend
       - name: Benchmark smoke
         run: python scripts/run_benchmarks.py
-
       - name: Release verification
         run: python scripts/release_check.py
 
   live-openai-validation:
-    if: ${{ secrets.OPENAI_API_KEY != '' }}
-
+    name: Live OpenAI Validation
     runs-on: ubuntu-latest
-
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
       FIELDNOTES_USE_FAKE_LLM: "0"
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
       - name: Install backend dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r backend/requirements.txt
-
+      - name: Skip if no OPENAI_API_KEY
+        shell: bash
+        run: |
+          if [ -z "${OPENAI_API_KEY}" ]; then
+            echo "No OPENAI_API_KEY configured."
+            echo "Skipping Live OpenAI validation."
+            exit 0
+          fi
       - name: Live OpenAI validation
         run: echo "Running live OpenAI validation..."
-
       - name: Phase 0 live probe
         run: python scripts/exit_phase0.py
-
       - name: Live Responses integration test
         run: python -m unittest tests.test_live_responses_api_integration
