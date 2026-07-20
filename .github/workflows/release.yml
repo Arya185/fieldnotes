@@ -49,9 +49,6 @@ jobs:
 
   live-openai-validation:
     name: Live OpenAI Validation
-
-    if: ${{ secrets.OPENAI_API_KEY != '' }}
-
     runs-on: ubuntu-latest
 
     env:
@@ -70,6 +67,15 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r backend/requirements.txt
+
+      - name: Skip if no OPENAI_API_KEY
+        shell: bash
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "No OPENAI_API_KEY configured."
+            echo "Skipping Live OpenAI validation."
+            exit 0
+          fi
 
       - name: Phase 0 live probe
         run: python scripts/exit_phase0.py
