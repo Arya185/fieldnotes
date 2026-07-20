@@ -10,7 +10,7 @@ os.environ.setdefault("FIELDNOTES_USE_FAKE_LLM", "1")
 
 from backend.db import BASE_SCHEMA_SQL, connect_sqlite, initialize_schema
 from backend.indexer.bm25 import BM25Provider
-from backend.indexer.embeddings import EmbeddingService
+from backend.indexer.embeddings import FASTEMBED_MODEL_NAME, EmbeddingService, FastEmbedProvider
 from backend.indexer.evaluation import RetrievalBenchmark, evaluate_benchmarks
 from backend.indexer.events import EventStreamHub
 from backend.indexer.pipeline import run_indexing
@@ -188,6 +188,16 @@ class Phase2EmbeddingsTests(unittest.TestCase):
         object.__setattr__(other_model, "_provider", other_counter)
         other_model.embed_query("same query")
         self.assertEqual(other_counter.calls, 1)
+
+    def test_fastembed_provider_returns_float_vector(self) -> None:
+        provider = FastEmbedProvider()
+        try:
+            vector = provider.embed("Trial 4 damping changed faster than expected.", model=FASTEMBED_MODEL_NAME)
+        except Exception as exc:
+            self.skipTest(f"fastembed unavailable in test environment: {exc}")
+        self.assertTrue(vector)
+        self.assertTrue(all(isinstance(value, float) for value in vector))
+        self.assertEqual(len(vector), 384)
 
     def test_bm25_only_mode_keeps_bm25_ordering(self) -> None:
         workspace = self.base / "bm25-only"

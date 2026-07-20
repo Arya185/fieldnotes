@@ -8,7 +8,7 @@
 
 Fieldnotes is a local-first AI learning workspace that turns a student's existing course folder — textbooks, lecture notes, slides, assignments, lab reports, and experiment datasets — into an active environment for understanding, investigating, connecting, and practicing.
 
-Unlike "chat with PDF" tools, Fieldnotes runs an agentic reasoning layer that decides *how* to answer: retrieving passages, writing and executing analysis code against the student's own data, generating visualizations, or building practice quizzes from what the student struggled with in the session. Files, indexes, and learning history never leave the machine; only minimal, task-scoped context is sent to the model for reasoning.
+Unlike "chat with PDF" tools, Fieldnotes runs an agentic reasoning layer that decides *how* to answer: retrieving passages, writing and executing analysis code against the student's own data, generating visualizations, or building practice quizzes from what the student struggled with in the session. Files, indexes, and learning history never leave the machine; only minimal, task-scoped context is sent to the model for reasoning. Retrieval can combine BM25 lexical search with local fastembed vectors when enabled, or fall back to deterministic hashed lexical vectors for CI and offline determinism.
 
 **One-liner:** Fieldnotes turns a folder into an interactive learning environment.
 
@@ -158,6 +158,8 @@ Takes over the center pane only (sidebar and notebook remain). One question at a
 - **Agent runtime:** orchestrates router → retrieval/document access/schema access/local analysis → grounded answer. The configured OpenAI Responses API model performs live intent classification, code generation, explanation, quiz generation, and concept-log updates; deterministic fake mode is available for offline use.
 - **Local code sandbox:** generated Python executes in a subprocess with a restricted working directory (the workspace), captured stdout/stderr, and chart artifact export. No network access from the sandbox.
 - **Event stream:** agent step events stream to the UI as live updates to drive the router trace.
+
+Retrieval modes remain local: BM25 lexical search, SQLite vector similarity over local embeddings, or hybrid fusion. "Semantic" retrieval is available only when `FIELDNOTES_EMBEDDINGS_PROVIDER=fastembed`; default deterministic provider is hashed lexical fallback for CI/offline repeatability, not semantic representation.
 
 ### 8.2 Local-first boundary (precise claim)
 

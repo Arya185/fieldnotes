@@ -1,10 +1,11 @@
-"""Deterministic embedding generation for persisted chunks."""
+"""Local embedding generation for persisted chunks."""
 
 from __future__ import annotations
 
 import hashlib
 from collections import OrderedDict
 from dataclasses import dataclass, field
+from threading import Lock
 from typing import Protocol
 
 from backend.config import (
@@ -18,16 +19,19 @@ from backend.storage import PersistedChunk, PersistedEmbedding, chunk_content_ha
 
 EMBEDDING_DIMENSIONS = 24
 QUERY_EMBEDDING_CACHE_SIZE = 128
+FASTEMBED_MODEL_NAME = "BAAI/bge-small-en-v1.5"
+_FASTEMBED_MODELS: dict[str, object] = {}
+_FASTEMBED_MODEL_LOCK = Lock()
 
 
 class EmbeddingProvider(Protocol):
     def embed(self, text: str, *, model: str) -> list[float]:
-        """Return a deterministic embedding vector for text."""
+        """Return embedding vector for text."""
 
 
 @dataclass(frozen=True)
 class DeterministicEmbeddingProvider:
-    """Local hash-based embedding provider for stable testable vectors."""
+    """Local hash-based lexical fallback for CI-stable non-semantic vectors."""
 
     dimensions: int = EMBEDDING_DIMENSIONS
 
@@ -44,12 +48,29 @@ class DeterministicEmbeddingProvider:
         return values
 
 
+@dataclass(frozen=True)
+class FastEmbedProvider:
+    """CPU local semantic embedding provider backed by fastembed."""
+
+    default_model: str = FASTEMBED_MODEL_NAME
+
+    def embed(self, text: str, *, model: str) -> list[float]:
+        normalized_model = model.strip()
+        if not normalized_model or normalized_model == "hash-v1":
+            normalized_model = self.default_model
+        embedding_model = _load_fastembed_model(normalized_model)
+        vector = next(iter(embedding_model.embed([text])))
+        return [float(value) for value in vector.tolist()]
+
+
 def build_embedding_provider(name: str) -> EmbeddingProvider:
     """Construct embedding provider from validated configuration."""
 
     provider_name = validate_embeddings_provider_name(name)
     if provider_name == "deterministic":
         return DeterministicEmbeddingProvider()
+    if provider_name == "fastembed":
+        return FastEmbedProvider()
     raise ValueError(f"Unsupported embedding provider: {provider_name}")
 
 
@@ -113,3 +134,17 @@ class EmbeddingService:
         while len(self._query_cache) > self.query_cache_size:
             self._query_cache.popitem(last=False)
         return list(vector)
+
+
+def _load_fastembed_model(model_name: str):
+    with _FASTEMBED_MODEL_LOCK:
+        cached = _FASTEMBED_MODELS.get(model_name)
+        if cached is not None:
+            return cached
+        try:
+            from fastembed import TextEmbedding
+        except ImportError as exc:  # pragma: no cover - dependency install issue
+            raise RuntimeError("fastembed is not installed") from exc
+        model = TextEmbedding(model_name=model_name)
+        _FASTEMBED_MODELS[model_name] = model
+        return model

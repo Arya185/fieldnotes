@@ -118,10 +118,11 @@ The retrieval layer searches locally indexed content.
 Its responsibilities are defined in `techstack.md` and `dataflow.md` and include:
 
 - keyword search
-- semantic search
+- vector similarity over local embeddings
 - citation resolution
 
 Retrieval always executes locally.
+When `FIELDNOTES_EMBEDDINGS_PROVIDER=fastembed`, vector retrieval uses local fastembed embeddings. Default deterministic provider remains hashed lexical fallback for CI/offline determinism rather than semantic embeddings.
 
 ---
 

@@ -1,21 +1,25 @@
+import type { DragEvent } from "react";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
 import { LockBadge } from "./components/LockBadge";
 import { Composer } from "./components/Composer";
-import { EmptyState } from "./components/EmptyState";
-import { WorkspaceOverview } from "./components/WorkspaceOverview";
-import { MarkdownBlock } from "./lib/markdown";
 import {
   fetchArtifact,
   getHealth,
   getNotebook,
   getSource,
-  openAskStream,
-  openIndexEvents,
-  openQuizAnswerStream,
-  openQuizStartStream,
   postIndex,
 } from "./lib/api";
+import {
+  type ArtifactPreview,
+  type ChatMessage,
+  type NoteOverrides,
+  type QuizState,
+  type RouteKey,
+  type SourceAccordionState,
+  type SourceNavItem,
+  type SourceViewState,
+} from "./lib/appState";
 import {
   loadDeveloperMode,
   loadIndexHistory,
@@ -26,9 +30,17 @@ import {
   type IndexHistoryEntry,
   type StoredWorkspaceRecord,
 } from "./lib/storage";
+import { useAskStream } from "./lib/useAskStream";
+import { useIndexStream } from "./lib/useIndexStream";
+import { useQuizStream } from "./lib/useQuizStream";
+import { ChatRoute } from "./routes/ChatRoute";
+import { DeveloperRoute } from "./routes/DeveloperRoute";
+import { NotebookRoute } from "./routes/NotebookRoute";
+import { QuizRoute } from "./routes/QuizRoute";
+import { SourceRoute } from "./routes/SourceRoute";
+import { WorkspaceRoute } from "./routes/WorkspaceRoute";
 import type {
   ArtifactCard,
-  ArtifactEvent,
   AskEvent,
   BenchmarkSummary,
   CitationChip,
@@ -36,58 +48,8 @@ import type {
   IndexEvent,
   NotebookResponse,
   QuizEvent,
-  SourceResponse,
 } from "./types";
 import "./styles.css";
-
-type RouteKey = "workspace" | "chat" | "notebook" | "quiz" | "source" | "developer";
-
-interface ChatMessage {
-  id: string;
-  role: "user" | "assistant";
-  text: string;
-  artifacts: ArtifactEvent[];
-  citations: CitationChip[];
-  concepts: ConceptUpdate[];
-  steps: string[];
-  answerId?: string;
-  requestText?: string;
-  error?: string;
-  pending?: boolean;
-}
-
-interface ArtifactPreview {
-  artifactId: string;
-  title: string;
-  kind: "image" | "text" | "json";
-  content: string;
-}
-
-interface QuizReviewItem {
-  question: string;
-  selectedIndex: number;
-  selectedLabel: string;
-  correctIndex: number;
-  isCorrect: boolean;
-  explanation: string;
-  chip?: CitationChip;
-  concept?: ConceptUpdate;
-}
-
-interface SourceNavItem {
-  label: string;
-  anchor?: string;
-}
-
-interface SourceAccordionState {
-  [messageId: string]: boolean;
-}
-
-interface NoteOverrides {
-  hiddenIds: string[];
-  pinnedIds: string[];
-  renamedTitles: Record<string, string>;
-}
 
 const routes: RouteKey[] = ["workspace", "chat", "notebook", "quiz", "source", "developer"];
 const PINNED_ARTIFACTS_KEY = "fieldnotes.pinnedArtifacts";
@@ -208,25 +170,9 @@ export default function App() {
   const [artifactPreview, setArtifactPreview] = useState<ArtifactPreview | null>(null);
   const [pinnedArtifacts, setPinnedArtifacts] = useState<string[]>(readPinnedArtifacts);
   const [noteOverrides, setNoteOverrides] = useState<NoteOverrides>(readNoteOverrides);
-  const [quizState, setQuizState] = useState<{
-    attemptId?: string;
-    question?: string;
-    options?: string[];
-    sourceLabel?: string;
-    sourceAnchor?: string;
-    explanation?: string;
-    lastConcept?: ConceptUpdate;
-    progress: string[];
-    reviews: QuizReviewItem[];
-    completion?: { score: number; total: number };
-  }>({ progress: [], reviews: [] });
+  const [quizState, setQuizState] = useState<QuizState>({ progress: [], reviews: [] });
   const [incorrectReviewOnly, setIncorrectReviewOnly] = useState(false);
-  const [sourceView, setSourceView] = useState<{
-    fileId?: string;
-    locator?: string;
-    response?: SourceResponse;
-    citationIndex?: number;
-  }>({});
+  const [sourceView, setSourceView] = useState<SourceViewState>({});
   const [developerSummary, setDeveloperSummary] = useState<BenchmarkSummary | null>(null);
   const [developerChunks, setDeveloperChunks] = useState<Array<{ label: string; chunk: string }>>([]);
   const [busy, setBusy] = useState(false);
@@ -239,12 +185,13 @@ export default function App() {
   const [sourceSearch, setSourceSearch] = useState("");
   const [sourcePanelExpanded, setSourcePanelExpanded] = useState(true);
   const [allSourcesExpanded, setAllSourcesExpanded] = useState(false);
+  const [sourceAccordionState, setSourceAccordionState] = useState<SourceAccordionState>({});
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
-  const askAbortRef = useRef<AbortController | null>(null);
-  const indexAbortRef = useRef<AbortController | null>(null);
   const autoScrollRef = useRef(true);
-  const [sourceAccordionState, setSourceAccordionState] = useState<SourceAccordionState>({});
+  const { runAskStream, cancelAskStream } = useAskStream();
+  const { startIndexStream } = useIndexStream();
+  const { startQuizStream, answerQuizStream } = useQuizStream();
 
   const activeWorkspace = recentWorkspaces.find((workspace) => workspace.workspaceId === activeWorkspaceId);
   const indexedDocumentCount = useMemo(() => {
@@ -331,7 +278,7 @@ export default function App() {
         event.preventDefault();
         composerRef.current?.focus();
       }
-      if (event.key === "Escape" && askAbortRef.current) {
+      if (event.key === "Escape" && streamingAnswerId) {
         event.preventDefault();
         handleCancelResponse();
       }
@@ -342,7 +289,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [chatMessages]);
+  }, [streamingAnswerId, chatMessages]);
 
   const allCitations = useMemo(
     () =>
@@ -355,6 +302,7 @@ export default function App() {
       ),
     [chatMessages],
   );
+
   const sourceNavItems = useMemo<SourceNavItem[]>(
     () =>
       allCitations.slice(0, 10).map((citation) => ({
@@ -363,6 +311,7 @@ export default function App() {
       })),
     [allCitations],
   );
+
   const deferredArtifactSearch = useDeferredValue(artifactSearch);
 
   const filteredArtifacts = useMemo(() => {
@@ -384,8 +333,8 @@ export default function App() {
     });
     sorted.sort(
       (left, right) =>
-        Number((noteOverrides.pinnedIds.includes(right.id) || pinnedArtifacts.includes(right.id))) -
-        Number((noteOverrides.pinnedIds.includes(left.id) || pinnedArtifacts.includes(left.id))),
+        Number(noteOverrides.pinnedIds.includes(right.id) || pinnedArtifacts.includes(right.id)) -
+        Number(noteOverrides.pinnedIds.includes(left.id) || pinnedArtifacts.includes(left.id)),
     );
     return sorted;
   }, [artifactFilter, artifactSort, deferredArtifactSearch, notebook.artifacts, noteOverrides, pinnedArtifacts]);
@@ -438,6 +387,24 @@ export default function App() {
     });
     return [...map.entries()].map(([id, value]) => ({ id, ...value }));
   }, [chatMessages, quizState.reviews]);
+
+  const reviewItems = incorrectReviewOnly
+    ? quizState.reviews.filter((item) => !item.isCorrect)
+    : quizState.reviews;
+  const activeWorkspaceHistory = indexHistory.filter((entry) => entry.workspaceId === activeWorkspaceId);
+  const indexedPages = activeWorkspaceHistory.reduce((max, entry) => Math.max(max, entry.chunkCount ?? 0), 0);
+  const fileTypeSummary = useMemo(() => {
+    const extensions = recentWorkspaces
+      .filter((workspace) => workspace.workspaceId === activeWorkspaceId)
+      .flatMap((workspace) => workspace.folderPath.split(".").slice(1))
+      .filter(Boolean);
+    return extensions.length > 0 ? extensions.join(", ") : "mixed";
+  }, [activeWorkspaceId, recentWorkspaces]);
+  const noBackend = runtimeMode === null && errorMessage?.toLowerCase().includes("failed");
+  const chatRouteActive = route === "chat";
+  const showFullNotebook = route === "notebook";
+  const showFullQuiz = route === "quiz";
+  const showFullSource = route === "source";
 
   function updateWorkspaceRecord(workspaceId: string, update: Partial<StoredWorkspaceRecord>) {
     setRecentWorkspaces((current) =>
@@ -514,18 +481,12 @@ export default function App() {
       setStatusMessage(validationError);
       return;
     }
-    if (
-      !force &&
-      activeWorkspace &&
-      activeWorkspace.folderPath === folder.trim() &&
-      !window.confirm("Re-index selected workspace?")
-    ) {
+    if (!force && activeWorkspace && activeWorkspace.folderPath === folder.trim() && !window.confirm("Re-index selected workspace?")) {
       return;
     }
     setBusy(true);
     setErrorMessage(null);
     setStatusMessage("Indexing workspace...");
-    indexAbortRef.current?.abort();
     const accepted = await postIndex({ folder_path: folder.trim() });
     const record: StoredWorkspaceRecord = {
       workspaceId: accepted.workspace_id,
@@ -550,9 +511,7 @@ export default function App() {
       ...current,
     ]);
     setIndexEvents([]);
-    const controller = new AbortController();
-    indexAbortRef.current = controller;
-    void openIndexEvents(
+    await startIndexStream(
       accepted.events,
       (event) => {
         setIndexEvents((current) => [...current, event]);
@@ -589,23 +548,20 @@ export default function App() {
           );
         }
       },
-      controller.signal,
-    ).catch((error: Error) => {
-      if (error.name === "AbortError") {
-        return;
-      }
-      updateWorkspaceRecord(accepted.workspace_id, { status: "error" });
-      setIndexHistory((current) =>
-        current.map((entry) =>
-          entry.runId === accepted.run_id
-            ? { ...entry, status: "failed", finishedAt: new Date().toISOString() }
-            : entry,
-        ),
-      );
-      setErrorMessage(`Indexing failed: ${error.message}`);
-      setStatusMessage(error.message);
-      setBusy(false);
-    });
+      (error: Error) => {
+        updateWorkspaceRecord(accepted.workspace_id, { status: "error" });
+        setIndexHistory((current) =>
+          current.map((entry) =>
+            entry.runId === accepted.run_id
+              ? { ...entry, status: "failed", finishedAt: new Date().toISOString() }
+              : entry,
+          ),
+        );
+        setErrorMessage(`Indexing failed: ${error.message}`);
+        setStatusMessage(error.message);
+        setBusy(false);
+      },
+    );
   }
 
   async function requestAnswer(userText: string, mode: "new" | "retry" | "regenerate") {
@@ -613,7 +569,6 @@ export default function App() {
       return;
     }
     setErrorMessage(null);
-    askAbortRef.current?.abort();
     const userMessage: ChatMessage | null =
       mode === "new"
         ? {
@@ -644,17 +599,11 @@ export default function App() {
     setStatusMessage("Streaming answer...");
     setDeveloperChunks([]);
     setStreamingAnswerId(assistantMessage.id);
-    setChatMessages((current) =>
-      mode === "new"
-        ? [...current, userMessage!, assistantMessage]
-        : [...current, assistantMessage],
-    );
+    setChatMessages((current) => (mode === "new" ? [...current, userMessage!, assistantMessage] : [...current, assistantMessage]));
 
-    const controller = new AbortController();
-    askAbortRef.current = controller;
-
-    await openAskStream(
-      { workspace_id: activeWorkspaceId, question: userText },
+    await runAskStream(
+      activeWorkspaceId,
+      userText,
       async (event: AskEvent) => {
         setChatMessages((current) =>
           current.map((message) => {
@@ -716,28 +665,27 @@ export default function App() {
           void loadNotebookForWorkspace(activeWorkspaceId);
         }
       },
-      controller.signal,
-    ).catch((error: Error) => {
-      if (error.name === "AbortError") {
+      () => {
         setStatusMessage("Response canceled.");
         setTypingIndicator(false);
         setBusy(false);
         setStreamingAnswerId(null);
-        return;
-      }
-      setBusy(false);
-      setTypingIndicator(false);
-      setStreamingAnswerId(null);
-      setErrorMessage(`Ask failed: ${error.message}`);
-      setStatusMessage(error.message);
-      setChatMessages((current) =>
-        current.map((message) =>
-          message.id === assistantMessage.id
-            ? { ...message, error: error.message, pending: false, text: message.text || `Error: ${error.message}` }
-            : message,
-        ),
-      );
-    });
+      },
+      (error: Error) => {
+        setBusy(false);
+        setTypingIndicator(false);
+        setStreamingAnswerId(null);
+        setErrorMessage(`Ask failed: ${error.message}`);
+        setStatusMessage(error.message);
+        setChatMessages((current) =>
+          current.map((message) =>
+            message.id === assistantMessage.id
+              ? { ...message, error: error.message, pending: false, text: message.text || `Error: ${error.message}` }
+              : message,
+          ),
+        );
+      },
+    );
   }
 
   async function handleAsk() {
@@ -745,7 +693,7 @@ export default function App() {
   }
 
   function handleCancelResponse() {
-    askAbortRef.current?.abort();
+    cancelAskStream();
     setTypingIndicator(false);
     setBusy(false);
     setChatMessages((current) =>
@@ -818,8 +766,8 @@ export default function App() {
     setBusy(true);
     setErrorMessage(null);
     setStatusMessage(restart ? "Restarting quiz..." : "Generating quiz...");
-    await openQuizStartStream(
-      { workspace_id: activeWorkspaceId, concept_ids: null },
+    await startQuizStream(
+      activeWorkspaceId,
       (event: QuizEvent) => {
         if (event.event === "question") {
           setQuizState((current) => ({
@@ -838,11 +786,12 @@ export default function App() {
           setStatusMessage("Quiz ready.");
         }
       },
-    ).catch((error: Error) => {
-      setBusy(false);
-      setErrorMessage(`Quiz start failed: ${error.message}`);
-      setStatusMessage(error.message);
-    });
+      (error: Error) => {
+        setBusy(false);
+        setErrorMessage(`Quiz start failed: ${error.message}`);
+        setStatusMessage(error.message);
+      },
+    );
   }
 
   async function handleAnswerQuiz(choice: number) {
@@ -851,12 +800,10 @@ export default function App() {
     }
     setBusy(true);
     setStatusMessage("Checking answer...");
-    await openQuizAnswerStream(
-      {
-        workspace_id: activeWorkspaceId,
-        attempt_id: quizState.attemptId,
-        chosen_index: choice,
-      },
+    await answerQuizStream(
+      activeWorkspaceId,
+      quizState.attemptId,
+      choice,
       (event: QuizEvent) => {
         if (event.event === "graded") {
           setQuizState((current) => ({
@@ -890,11 +837,12 @@ export default function App() {
           void loadNotebookForWorkspace(activeWorkspaceId);
         }
       },
-    ).catch((error: Error) => {
-      setBusy(false);
-      setErrorMessage(`Quiz answer failed: ${error.message}`);
-      setStatusMessage(error.message);
-    });
+      (error: Error) => {
+        setBusy(false);
+        setErrorMessage(`Quiz answer failed: ${error.message}`);
+        setStatusMessage(error.message);
+      },
+    );
   }
 
   async function handleJumpToSource(anchor: string | undefined) {
@@ -937,14 +885,17 @@ export default function App() {
       });
   }
 
-  function handleDropWorkspace(event: React.DragEvent<HTMLDivElement>) {
+  function handleDropWorkspace(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
     setDragActive(false);
     const text = event.dataTransfer.getData("text/plain").trim();
     const filePath =
       text ||
       Array.from(event.dataTransfer.files)
-        .map((file) => (file as File & { path?: string; webkitRelativePath?: string }).path ?? file.webkitRelativePath)
+        .map((file) => {
+          const candidate = file as File & { path?: string; webkitRelativePath?: string };
+          return candidate.path ?? candidate.webkitRelativePath;
+        })
         .find(Boolean) ||
       "";
     if (filePath) {
@@ -990,29 +941,6 @@ export default function App() {
   async function copyAnswer(message: ChatMessage) {
     await copyText(message.text);
     setStatusMessage("Answer copied.");
-  }
-
-  const reviewItems = incorrectReviewOnly
-    ? quizState.reviews.filter((item) => !item.isCorrect)
-    : quizState.reviews;
-  const activeWorkspaceHistory = indexHistory.filter((entry) => entry.workspaceId === activeWorkspaceId);
-  const indexedPages = activeWorkspaceHistory.reduce((max, entry) => Math.max(max, entry.chunkCount ?? 0), 0);
-  const fileTypeSummary = useMemo(() => {
-    const extensions = recentWorkspaces
-      .filter((workspace) => workspace.workspaceId === activeWorkspaceId)
-      .flatMap((workspace) => workspace.folderPath.split(".").slice(1))
-      .filter(Boolean);
-    return extensions.length > 0 ? extensions.join(", ") : "mixed";
-  }, [activeWorkspaceId, recentWorkspaces]);
-  const noBackend = runtimeMode === null && errorMessage?.toLowerCase().includes("failed");
-
-  const chatRouteActive = route === "chat";
-  const showFullNotebook = route === "notebook";
-  const showFullQuiz = route === "quiz";
-  const showFullSource = route === "source";
-
-  function renderEmptyState(title: string, body: string, actionLabel?: string, action?: () => void) {
-    return <EmptyState title={title} body={body} actionLabel={actionLabel} onAction={action} />;
   }
 
   return (
@@ -1227,7 +1155,7 @@ export default function App() {
           }}
         >
           {route === "workspace" && (
-            <WorkspaceOverview
+            <WorkspaceRoute
               activeWorkspace={activeWorkspace}
               starterSummary={starterSummary}
               indexedDocumentCount={indexedDocumentCount}
@@ -1244,568 +1172,104 @@ export default function App() {
           )}
 
           {route === "chat" && (
-            <section className="chat-layout">
-              <div className="chat-toolbar">
-                <button className="button secondary" onClick={() => void handleRetryLast()} disabled={busy || chatMessages.length === 0}>
-                  Retry Last
-                </button>
-                <button className="button secondary" onClick={() => void handleRegenerate()} disabled={busy || chatMessages.length === 0}>
-                  Regenerate
-                </button>
-                <button className="button ghost" onClick={handleCancelResponse} disabled={!busy}>
-                  Cancel
-                </button>
-                <button className="button ghost" onClick={() => void exportConversation()} disabled={chatMessages.length === 0}>
-                  Export Markdown
-                </button>
-              </div>
-
-              {busy && (
-                <div className="stream-banner" aria-live="polite">
-                  <span className="stream-dot" aria-hidden="true" />
-                  Streaming answer. Auto-scroll stays locked unless you scroll away.
-                </div>
-              )}
-
-              {chatMessages.length === 0 && (
-                <div className="empty-chat-state">
-                  <div className="eyebrow">Ready to study</div>
-                  <h3>Ask questions grounded in your indexed files.</h3>
-                  <p>
-                    Reading comes first here: answers stay tied to sources, notebook artifacts stay close at hand, and quiz mode is one click away.
-                  </p>
-                  <div className="empty-chat-prompts">
-                    <button className="suggestion-chip" onClick={() => setChatInput("Summarize the main ideas in this workspace.")}>
-                      Summarize this workspace
-                    </button>
-                    <button className="suggestion-chip" onClick={() => setChatInput("List the most important documents to read first.")}>
-                      What should I read first?
-                    </button>
-                    <button className="suggestion-chip" onClick={() => setChatInput("Create a study guide from the indexed sources.")}>
-                      Create a study guide
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {chatMessages.map((message) => (
-                <article className={`message-card polished-message ${message.role}`} key={message.id}>
-                  <div className="message-meta">
-                    <strong>{message.role === "assistant" ? "Fieldnotes" : "You"}</strong>
-                    {message.steps.length > 0 && <span>{message.steps[message.steps.length - 1]}</span>}
-                  </div>
-                  <div className="message-body-wrap">
-                    <MarkdownBlock text={message.text || (message.pending ? "…" : "")} />
-                  </div>
-                  {message.pending && <div className="typing-indicator" aria-label="Typing indicator">Fieldnotes typing…</div>}
-                  {message.role === "assistant" && (
-                    <div className="toolbar compact">
-                      <button className="button secondary" onClick={() => void copyAnswer(message)} disabled={!message.text}>
-                        Copy Answer
-                      </button>
-                      {message.requestText && (
-                        <button className="button ghost" onClick={() => void requestAnswer(message.requestText!, "regenerate")} disabled={busy}>
-                          Regenerate
-                        </button>
-                      )}
-                    </div>
-                  )}
-                  {message.artifacts.length > 0 && (
-                    <div className="stack">
-                      {message.artifacts.map((artifact) => (
-                        <div className="artifact-preview" key={`${message.id}-${artifact.artifact_id}-${artifact.title}`}>
-                          <div className="split-row">
-                            <strong>{artifact.title || artifact.kind}</strong>
-                            <button
-                              className="button secondary"
-                              onClick={() =>
-                                void handleOpenArtifact({
-                                  id: artifact.artifact_id,
-                                  kind: artifact.kind === "script" ? "script" : artifact.kind === "chart" ? "chart" : "explainer",
-                                  title: artifact.title,
-                                  created_at: new Date().toISOString(),
-                                  url: artifact.url,
-                                })
-                              }
-                            >
-                              Open
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {message.citations.length > 0 && (
-                    <details
-                      className="sources-disclosure"
-                      open={sourceAccordionState[message.id] ?? allSourcesExpanded}
-                      onToggle={(event) =>
-                        setSourceAccordionState((current) => ({
-                          ...current,
-                          [message.id]: (event.currentTarget as HTMLDetailsElement).open,
-                        }))
-                      }
-                    >
-                      <summary>Sources ({message.citations.length})</summary>
-                      <div className="sources-list">
-                        {message.citations.map((chip, index) => (
-                          <div className="source-row" key={`${message.id}-citation-${index}`}>
-                            <button
-                              className={`source-link ${sourceView.locator && chip.anchor?.endsWith(sourceView.locator) ? "source-link-active" : ""}`}
-                              onClick={() => void handleJumpToSource(chip.anchor)}
-                            >
-                              {chip.label}
-                            </button>
-                            <button className="mini-action" aria-label={`Copy citation ${chip.label}`} onClick={() => void copyCitation(chip)}>
-                              Copy
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </details>
-                  )}
-                  {message.concepts.length > 0 && (
-                    <div className="chip-row">
-                      {message.concepts.map((concept) => (
-                        <span className="pill" key={concept.concept_id}>
-                          {concept.name}: {concept.state}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </article>
-              ))}
-              {chatMessages.length > 0 && (
-                <div className="toolbar compact chat-footer-tools">
-                  <button
-                    className="button ghost"
-                    onClick={() => setAllSourcesExpanded((current) => !current)}
-                  >
-                    {allSourcesExpanded ? "Collapse All Sources" : "Expand All Sources"}
-                  </button>
-                  <span className="muted">Shortcuts: Cmd/Ctrl+Enter send, Cmd/Ctrl+K focus, Escape stop.</span>
-                </div>
-              )}
-            </section>
+            <ChatRoute
+              busy={busy}
+              chatMessages={chatMessages}
+              allSourcesExpanded={allSourcesExpanded}
+              sourceAccordionState={sourceAccordionState}
+              sourceView={sourceView}
+              onRetryLast={() => void handleRetryLast()}
+              onRegenerate={() => void handleRegenerate()}
+              onCancel={handleCancelResponse}
+              onExportConversation={() => void exportConversation()}
+              onSetChatInput={setChatInput}
+              onCopyAnswer={(message) => void copyAnswer(message)}
+              onRequestAnswer={(question) => void requestAnswer(question, "regenerate")}
+              onOpenArtifact={(artifact) => void handleOpenArtifact(artifact)}
+              onJumpToSource={(anchor) => void handleJumpToSource(anchor)}
+              onCopyCitation={(chip) => void copyCitation(chip)}
+              onToggleAccordion={(messageId, open) =>
+                setSourceAccordionState((current) => ({ ...current, [messageId]: open }))
+              }
+              onToggleAllSources={() => setAllSourcesExpanded((current) => !current)}
+            />
           )}
 
           {route === "notebook" && (
-            <section className="workspace-overview stack">
-              <div className="section-heading">
-                <div>
-                  <div className="eyebrow">Notebook</div>
-                  <h3>Saved artifacts</h3>
-                </div>
-              </div>
-              <div className="toolbar">
-                {["all", "explainer", "script", "chart", "quiz_result"].map((kind) => (
-                  <button
-                    key={kind}
-                    className="tab"
-                    aria-selected={artifactFilter === kind}
-                    onClick={() => setArtifactFilter(kind)}
-                  >
-                    {kind}
-                  </button>
-                ))}
-              </div>
-              <div className="toolbar">
-                <input
-                  aria-label="Search artifacts"
-                  className="input"
-                  placeholder="Search artifacts"
-                  value={artifactSearch}
-                  onChange={(event) => setArtifactSearch(event.target.value)}
-                />
-                <select
-                  aria-label="Sort artifacts"
-                  className="select"
-                  value={artifactSort}
-                  onChange={(event) => setArtifactSort(event.target.value as "newest" | "oldest")}
-                >
-                  <option value="newest">Newest</option>
-                  <option value="oldest">Oldest</option>
-                </select>
-              </div>
-              {notebook.artifacts.length === 0 &&
-                renderEmptyState(
-                  "No notebook entries",
-                  "Artifacts appear after answers, quizzes, or analysis runs. Ask workspace question to start collecting reusable notes.",
-                  "Go To Chat",
-                  () => setRoute("chat"),
-                )}
-              <div className="artifact-list">
-                {filteredArtifacts.map((artifact) => (
-                  <article className="artifact-card notebook-card" key={artifact.id}>
-                    <header>
-                      <div>
-                        <strong>{noteOverrides.renamedTitles[artifact.id] ?? artifact.title}</strong>
-                        <p className="muted">{artifact.kind} · {formatDateTime(artifact.created_at)}</p>
-                      </div>
-                      <div className="toolbar">
-                        <button className="button secondary" onClick={() => void handleOpenArtifact(artifact)}>
-                          Reopen
-                        </button>
-                        <button
-                          className="button ghost"
-                          onClick={() =>
-                            setPinnedArtifacts((current) =>
-                              current.includes(artifact.id)
-                                ? current.filter((item) => item !== artifact.id)
-                                : [artifact.id, ...current],
-                            )
-                          }
-                        >
-                          {pinnedArtifacts.includes(artifact.id) ? "Unpin" : "Pin"}
-                        </button>
-                        <button className="button ghost" onClick={() => renameArtifact(artifact)}>
-                          Rename
-                        </button>
-                        <button className="button ghost" onClick={() => void exportArtifact(artifact)}>
-                          Export
-                        </button>
-                        <button
-                          className="button ghost"
-                          onClick={() => {
-                            setChatInput(`Use artifact ${artifact.title} in answer.`);
-                            setRoute("chat");
-                          }}
-                        >
-                          Ask With
-                        </button>
-                        <button
-                          className="button ghost"
-                          onClick={() => deleteArtifact(artifact)}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </header>
-                  </article>
-                ))}
-              </div>
-              {notebook.artifacts.length > 0 && filteredArtifacts.length === 0 && (
-                <div className="hint-card">No search results. Change note query or switch artifact filter.</div>
-              )}
-              {artifactPreview && (
-                <article className="artifact-card">
-                  <header>
-                    <strong>{artifactPreview.title}</strong>
-                    <span className="pill">{artifactPreview.kind}</span>
-                  </header>
-                  {artifactPreview.kind === "image" ? (
-                    <img alt={artifactPreview.title} src={artifactPreview.content} />
-                  ) : artifactPreview.kind === "json" ? (
-                    <pre>{artifactPreview.content}</pre>
-                  ) : (
-                    <MarkdownBlock text={artifactPreview.content} />
-                  )}
-                </article>
-              )}
-            </section>
+            <NotebookRoute
+              notebook={notebook}
+              artifactFilter={artifactFilter}
+              artifactSearch={artifactSearch}
+              artifactSort={artifactSort}
+              filteredArtifacts={filteredArtifacts}
+              artifactPreview={artifactPreview}
+              noteOverrides={noteOverrides}
+              pinnedArtifacts={pinnedArtifacts}
+              formatDateTime={formatDateTime}
+              onSetArtifactFilter={setArtifactFilter}
+              onSetArtifactSearch={setArtifactSearch}
+              onSetArtifactSort={setArtifactSort}
+              onGoToChat={() => setRoute("chat")}
+              onOpenArtifact={(artifact) => void handleOpenArtifact(artifact)}
+              onTogglePin={(artifactId) =>
+                setPinnedArtifacts((current) =>
+                  current.includes(artifactId)
+                    ? current.filter((item) => item !== artifactId)
+                    : [artifactId, ...current],
+                )
+              }
+              onRenameArtifact={renameArtifact}
+              onExportArtifact={(artifact) => void exportArtifact(artifact)}
+              onAskWithArtifact={(artifact) => {
+                setChatInput(`Use artifact ${artifact.title} in answer.`);
+                setRoute("chat");
+              }}
+              onDeleteArtifact={deleteArtifact}
+            />
           )}
 
           {route === "quiz" && (
-            <section className="workspace-overview stack">
-              <div className="section-heading">
-                <div>
-                  <div className="eyebrow">Quiz</div>
-                  <h3>Study mode</h3>
-                </div>
-              </div>
-              <div className="toolbar">
-                <button className="button" onClick={() => void handleStartQuiz(false)} disabled={!activeWorkspaceId || busy}>
-                  Start Quiz
-                </button>
-                <button className="button secondary" onClick={() => void handleStartQuiz(true)} disabled={!activeWorkspaceId || busy}>
-                  Restart Quiz
-                </button>
-                <button
-                  className="button ghost"
-                  onClick={() => setIncorrectReviewOnly((current) => !current)}
-                  disabled={quizState.reviews.length === 0}
-                >
-                  {incorrectReviewOnly ? "Show All Review" : "Incorrect Review"}
-                </button>
-              </div>
-              {!quizState.question &&
-                !quizState.completion &&
-                renderEmptyState(
-                  "No quiz generated",
-                  "Start quiz after indexing workspace. Fieldnotes builds questions from current source set.",
-                  "Generate Quiz",
-                  () => void handleStartQuiz(false),
-                )}
-              {quizState.question && (
-                <article className="quiz-card study-card">
-                  <div className="quiz-kicker">Question</div>
-                  <div className="quiz-progress-row">
-                    <span className="pill">Progress {Math.min(quizState.reviews.length + 1, (quizState.completion?.total ?? 1))}/{quizState.completion?.total ?? 1}</span>
-                    {quizState.reviews.length > 0 && <span className="pill">Score {quizState.reviews.filter((item) => item.isCorrect).length}</span>}
-                  </div>
-                  <strong className="quiz-question">{quizState.question}</strong>
-                  <div className="quiz-options">
-                    {quizState.options?.map((option, index) => (
-                      <button
-                        className="quiz-option"
-                        key={`${option}-${index}`}
-                        onClick={() => void handleAnswerQuiz(index)}
-                        disabled={busy}
-                      >
-                        {option}
-                      </button>
-                    ))}
-                  </div>
-                  {quizState.explanation && (
-                    <details className="quiz-explanation" open>
-                      <summary>Explanation</summary>
-                      <p>{quizState.explanation}</p>
-                    </details>
-                  )}
-                  {quizState.lastConcept && (
-                    <span className="pill">
-                      {quizState.lastConcept.name}: {quizState.lastConcept.state}
-                    </span>
-                  )}
-                </article>
-              )}
-              {quizState.completion && (
-                <div className="finish-card">
-                  <div className="eyebrow">Finish Screen</div>
-                  <h3>Completion summary: {quizState.completion.score}/{quizState.completion.total}</h3>
-                  <p>Review explanations, retry incorrect answers, or start fresh run when ready.</p>
-                  <div className="toolbar compact">
-                    <button className="button secondary" onClick={() => setIncorrectReviewOnly(true)} disabled={quizState.reviews.every((item) => item.isCorrect)}>
-                      Retry Incorrect
-                    </button>
-                    <button className="button ghost" onClick={() => void handleStartQuiz(true)}>
-                      Start Fresh
-                    </button>
-                  </div>
-                </div>
-              )}
-              <div className="grid-two">
-                <div className="history-list">
-                  {reviewItems.map((item, index) => (
-                    <div className="history-card" key={`${item.question}-${index}`}>
-                      <strong>{item.question}</strong>
-                      <p className="muted">You chose: {item.selectedLabel}</p>
-                      <p className="muted">Correct index: {item.correctIndex}</p>
-                      <p>{item.explanation}</p>
-                      {item.chip && (
-                        <button className="chip" onClick={() => void handleJumpToSource(item.chip?.anchor)}>
-                          {item.chip.label}
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                <div className="history-list">
-                  <div className="history-card">
-                    <strong>Concept Progress</strong>
-                    {conceptSummary.length === 0 && <p className="muted">No concept updates yet.</p>}
-                    {conceptSummary.map((concept) => (
-                      <div className="progress-meter" key={concept.id}>
-                        <span>{concept.name}</span>
-                        <div className="meter-bar">
-                          <div className="meter-fill" style={{ width: `${Math.min(100, concept.touched * 25 + concept.shaky * 10)}%` }} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-              <div className="history-list">
-                {quizState.progress.map((entry, index) => (
-                  <div className="history-card" key={`${entry}-${index}`}>
-                    {entry}
-                  </div>
-                ))}
-              </div>
-            </section>
+            <QuizRoute
+              activeWorkspaceId={activeWorkspaceId}
+              busy={busy}
+              quizState={quizState}
+              incorrectReviewOnly={incorrectReviewOnly}
+              reviewItems={reviewItems}
+              conceptSummary={conceptSummary}
+              onStartQuiz={(restart) => void handleStartQuiz(restart)}
+              onToggleIncorrectOnly={() => setIncorrectReviewOnly((current) => !current)}
+              onRetryIncorrect={() => setIncorrectReviewOnly(true)}
+              onAnswerQuiz={(choice) => void handleAnswerQuiz(choice)}
+              onJumpToSource={(anchor) => void handleJumpToSource(anchor)}
+            />
           )}
 
           {route === "source" && (
-            <section className="workspace-overview stack">
-              <div className="section-heading">
-                <div>
-                  <div className="eyebrow">Source</div>
-                  <h3>Grounding view</h3>
-                </div>
-              </div>
-              <div className="toolbar">
-                <button
-                  className="button secondary"
-                  onClick={() => quizState.sourceAnchor && void handleJumpToSource(quizState.sourceAnchor)}
-                  disabled={!quizState.sourceAnchor}
-                >
-                  Open Quiz Citation
-                </button>
-                <button className="button secondary" onClick={() => handleSourceNav(-1)} disabled={sourceView.citationIndex === undefined || sourceView.citationIndex < 1}>
-                  Previous Citation
-                </button>
-                <button className="button secondary" onClick={() => handleSourceNav(1)} disabled={sourceView.citationIndex === undefined || sourceView.citationIndex >= allCitations.length - 1}>
-                  Next Citation
-                </button>
-                <button
-                  className="button ghost"
-                  onClick={() =>
-                    sourceView.response &&
-                    void copyText(`${sourceView.response.file_path} -> ${sourceView.response.label} -> ${sourceView.locator ?? ""}`)
-                  }
-                  disabled={!sourceView.response}
-                >
-                  Copy Source Ref
-                </button>
-                <button className="button ghost" onClick={() => setSourcePanelExpanded((current) => !current)} disabled={!sourceView.response}>
-                  {sourcePanelExpanded ? "Collapse Source" : "Expand Source"}
-                </button>
-              </div>
-              {sourceView.response ? (
-                <article className="source-card polished-source-card">
-                  <header>
-                    <div>
-                      <strong>{sourceView.response.label}</strong>
-                      <p className="muted">{sourceView.response.file_path}</p>
-                      <p className="breadcrumb">
-                        {sourceView.response.file_path} → {sourceView.response.label} → {sourceView.locator}
-                      </p>
-                    </div>
-                    <span className="pill">{sourceView.locator}</span>
-                  </header>
-                  <div className="toolbar compact source-tools">
-                    <input
-                      aria-label="Search within source"
-                      className="input"
-                      placeholder="Search within source"
-                      value={sourceSearch}
-                      onChange={(event) => {
-                        const nextValue = event.target.value;
-                        setSourceSearch(nextValue);
-                      }}
-                    />
-                    <span className="pill">
-                      Page {sourceView.locator?.split("/")[0] ?? "current"}
-                    </span>
-                    <span className="pill">
-                      {sourceSearchResults.length > 0 ? `${sourceSearchResults.length} matches` : "No search results"}
-                    </span>
-                  </div>
-                  {sourcePanelExpanded && (
-                    <div className="source-text">
-                      <span className="highlight">{sourceView.response.text}</span>
-                    </div>
-                  )}
-                </article>
-              ) : (
-                renderEmptyState(
-                  "No source selected",
-                  "Open citation from chat or quiz. Fieldnotes will jump straight to cited passage and keep locator visible.",
-                )
-              )}
-            </section>
+            <SourceRoute
+              allCitationsCount={allCitations.length}
+              sourceView={sourceView}
+              sourceSearch={sourceSearch}
+              sourceSearchResults={sourceSearchResults}
+              sourcePanelExpanded={sourcePanelExpanded}
+              quizSourceAnchor={quizState.sourceAnchor}
+              onOpenQuizCitation={() => quizState.sourceAnchor && void handleJumpToSource(quizState.sourceAnchor)}
+              onSourceNav={handleSourceNav}
+              onCopySourceRef={() =>
+                sourceView.response &&
+                void copyText(`${sourceView.response.file_path} -> ${sourceView.response.label} -> ${sourceView.locator ?? ""}`)
+              }
+              onToggleExpanded={() => setSourcePanelExpanded((current) => !current)}
+              onSetSourceSearch={setSourceSearch}
+            />
           )}
 
           {route === "developer" && developerMode && (
-            <section className="developer-grid">
-              <article className="dev-card">
-                <header>
-                  <strong>Retrieval Transparency</strong>
-                  <input
-                    aria-label="Load benchmark summary"
-                    className="input"
-                    type="file"
-                    accept="application/json"
-                    onChange={(event) => handleBenchmarkImport(event.target.files?.[0] ?? null)}
-                  />
-                </header>
-                <div className="stack">
-                  <div className="history-card">
-                    <strong>Live Trace Timeline</strong>
-                    {chatMessages.flatMap((message) => message.steps).map((step, index) => (
-                      <div className="timeline-row" key={`${step}-${index}`}>
-                        <span className="pill">{index + 1}</span>
-                        <span>{step}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="history-card">
-                    <strong>Planner Execution Graph</strong>
-                    {chatMessages.flatMap((message) => message.steps).map((step, index) => (
-                      <div key={`${step}-graph-${index}`}>{index === 0 ? "start" : "↓"} {step}</div>
-                    ))}
-                  </div>
-                  <div className="history-card">
-                    <strong>Final Grounded Chunks</strong>
-                    {developerChunks.length > 0 ? (
-                      developerChunks.map((chunk, index) => (
-                        <div key={`${chunk.label}-${index}`}>
-                          <strong>{chunk.label}</strong>
-                          <p>{chunk.chunk}</p>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="muted">Current backend transport exposes only final cited chunks.</p>
-                    )}
-                  </div>
-                </div>
-              </article>
-
-              <article className="dev-card">
-                <strong>Observability</strong>
-                {developerSummary ? (
-                  <div className="stack">
-                    <div className="table-wrap">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>Metric</th>
-                            <th>Avg</th>
-                            <th>Max</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {Object.entries(developerSummary.latency_summary).map(([key, value]) => (
-                            <tr key={key}>
-                              <td>{key}</td>
-                              <td>{value.avg.toFixed(2)}</td>
-                              <td>{value.max.toFixed(2)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    <div className="history-card">
-                      <strong>Latency Charts</strong>
-                      {Object.entries(developerSummary.latency_summary).map(([key, value]) => (
-                        <div className="progress-meter" key={`lat-${key}`}>
-                          <span>{key}</span>
-                          <div className="meter-bar">
-                            <div className="meter-fill accent" style={{ width: `${Math.min(100, value.avg)}%` }} />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="history-card">
-                      <strong>Retrieval Score Breakdown</strong>
-                      <pre>{JSON.stringify(developerSummary.retrieval_metrics, null, 2)}</pre>
-                    </div>
-                    <div className="history-card">
-                      <strong>Reranking Decisions</strong>
-                      <pre>{JSON.stringify(developerSummary.regression_comparison ?? {}, null, 2)}</pre>
-                    </div>
-                    <div className="history-card">
-                      <strong>Execution Metrics</strong>
-                      <pre>{JSON.stringify(developerSummary.execution_metrics, null, 2)}</pre>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="muted">
-                    Import benchmark JSON from `scripts/benchmarks_latest.json` to inspect traces, latencies, benchmark summaries.
-                  </p>
-                )}
-              </article>
-            </section>
+            <DeveloperRoute
+              chatMessages={chatMessages}
+              developerChunks={developerChunks}
+              developerSummary={developerSummary}
+              onBenchmarkImport={handleBenchmarkImport}
+            />
           )}
         </div>
 
@@ -1904,16 +1368,16 @@ export default function App() {
                 {filteredArtifacts.length === 0 ? (
                   <div className="hint-card">No notebook entries yet. Ask question or finish quiz to collect study artifacts.</div>
                 ) : (
-                <div className="artifact-list">
-                  {filteredArtifacts.slice(0, 4).map((artifact) => (
-                    <button className="artifact-card notebook-card" key={artifact.id} onClick={() => void handleOpenArtifact(artifact)}>
-                      <header>
-                        <strong>{noteOverrides.renamedTitles[artifact.id] ?? artifact.title}</strong>
-                        <span className="pill">{(noteOverrides.pinnedIds.includes(artifact.id) || pinnedArtifacts.includes(artifact.id)) ? "pinned" : artifact.kind}</span>
-                      </header>
-                    </button>
-                  ))}
-                </div>
+                  <div className="artifact-list">
+                    {filteredArtifacts.slice(0, 4).map((artifact) => (
+                      <button className="artifact-card notebook-card" key={artifact.id} onClick={() => void handleOpenArtifact(artifact)}>
+                        <header>
+                          <strong>{noteOverrides.renamedTitles[artifact.id] ?? artifact.title}</strong>
+                          <span className="pill">{noteOverrides.pinnedIds.includes(artifact.id) || pinnedArtifacts.includes(artifact.id) ? "pinned" : artifact.kind}</span>
+                        </header>
+                      </button>
+                    ))}
+                  </div>
                 )}
               </section>
             )}

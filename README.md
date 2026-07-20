@@ -2,6 +2,26 @@
 
 Fieldnotes `1.0.0-beta.1` is local-first AI learning workspace for course folders. Backend indexes course files into local SQLite + retrieval stores. Frontend exposes chat, notebook, quiz, source viewer, developer diagnostics. RC1 hardens release path without changing public APIs.
 
+## Demo
+
+![Empty state screenshot placeholder](docs/images/screenshot-empty-state.png)
+
+![Chat view with citation screenshot placeholder](docs/images/screenshot-chat.png)
+
+![Quiz view screenshot placeholder](docs/images/screenshot-quiz.png)
+
+![Developer diagnostics panel screenshot placeholder](docs/images/screenshot-developer-diagnostics.png)
+
+## Security
+
+Generated analysis code runs in restricted sandbox. [backend/sandbox/runtime.py](/Users/aryapatel/arya/Programming/All%20Hackathons/Fieldnotes/backend/sandbox/runtime.py) parses scripts with Python AST, allowlists importable modules, blocks dangerous builtins and name references, and routes file access through workspace-jailing helpers plus artifact-only writes. [backend/sandbox/containment.py](/Users/aryapatel/arya/Programming/All%20Hackathons/Fieldnotes/backend/sandbox/containment.py) adds OS-level process containment with subprocess timeouts, stdout/stderr caps, and platform-specific process limits. Adversarial coverage lives in [tests/test_sandbox_security.py](/Users/aryapatel/arya/Programming/All%20Hackathons/Fieldnotes/tests/test_sandbox_security.py), including path traversal, absolute-path, symlink-escape, and Windows-specific containment checks.
+
+App binds to `localhost`, has no authentication, and is designed as single-user local tool, not public deployment target.
+
+## Why Responses API
+
+[backend/agent/llm.py](/Users/aryapatel/arya/Programming/All%20Hackathons/Fieldnotes/backend/agent/llm.py) uses OpenAI Responses API for function-calling retrieval (`search_index`), strict structured outputs via `json_schema` with `strict: true`, and streamed grounded answer generation.
+
 ## Capabilities
 
 - Local indexing for `pdf`, `pptx`, `docx`, `md`, `txt`, `csv`
@@ -71,7 +91,7 @@ FIELDNOTES_USE_FAKE_LLM=1
 
 ## Beta Onboarding
 
-Start with [docs/beta-onboarding.md](/Users/aryapatel/arya/Programming/All Hackathons/Fieldnotes/docs/beta-onboarding.md). It is single path for external beta users and points to install, demo workflow, feedback template, known issues, and release notes.
+Start with [docs/beta-onboarding.md](docs/beta-onboarding.md). It is single path for external beta users and points to install, demo workflow, feedback template, known issues, and release notes.
 
 ## Quick Start
 
@@ -79,6 +99,15 @@ Start backend:
 
 ```bash
 python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+```
+
+## Docker
+
+Backend-only container:
+
+```bash
+docker build -t fieldnotes-backend .
+docker run --rm -p 8000:8000 fieldnotes-backend
 ```
 
 Start frontend dev server:
@@ -142,6 +171,19 @@ GitHub Actions keeps fake-mode validation on every push and pull request. That w
 
 Optional live OpenAI validation runs in separate `live-openai-validation` job only when repository secret `OPENAI_API_KEY` is present. Job runs `python scripts/exit_phase0.py` and `python -m unittest tests.test_live_responses_api_integration` against configured live model. Without secret, job is skipped cleanly. Expected runtime: usually under 1 minute. Expected cost: minimal, one tiny probe plus one tiny integration request.
 
+## Performance
+
+Measured locally on `2026-07-20` against bundled `demo_course/` in `fake-LLM mode`:
+
+- Indexing time: `40.60 ms`
+- Ask execution time: `368.02 ms`
+- Retrieval latency: `0.33 ms`
+- Sandbox execution time: `366.66 ms`
+- Indexed files: `3`
+- Indexed chunks: `6`
+
+These numbers come from local backend timing only. In this environment, full `scripts/run_benchmarks.py` frontend-build step could not complete because frontend package-manager tooling was unavailable offline, so README reports actual fake-mode backend timings from bundled sample workspace instead.
+
 ## Documentation Index
 
 - [Installation guide](docs/installation.md)
@@ -166,3 +208,7 @@ Optional live OpenAI validation runs in separate `live-openai-validation` job on
 - `pendulum.csv`
 
 Use it to exercise indexing, retrieval, notebook, quizzes, source viewer.
+
+## License
+
+Project is MIT licensed. See [LICENSE](LICENSE).

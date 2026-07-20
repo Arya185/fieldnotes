@@ -26,7 +26,7 @@ WORKSPACE_REGISTRY_DIR = ROOT_DIR / ".fieldnotes_registry"
 WORKSPACE_REGISTRY_PATH = WORKSPACE_REGISTRY_DIR / "workspaces.json"
 
 VALID_RETRIEVAL_PROVIDERS = {"bm25", "hybrid", "vector"}
-VALID_EMBEDDINGS_PROVIDERS = {"deterministic"}
+VALID_EMBEDDINGS_PROVIDERS = {"deterministic", "fastembed"}
 
 
 def load_project_dotenv(env_path: Path | None = None) -> bool:
