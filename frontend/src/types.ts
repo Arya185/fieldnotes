@@ -12,7 +12,7 @@ export type StepType =
   | "execution"
   | "grounding"
   | "retry";
-export type StepStatus = "started" | "ok" | "failed";
+export type StepStatus = "started" | "ok" | "failed" | "no_match";
 export type CitationChipType = "document" | "code";
 export type ConceptState = "touched" | "shaky";
 export type ArtifactKind = "chart" | "script" | "explainer";
@@ -253,6 +253,8 @@ export interface ArtifactCard {
 
 export interface NotebookResponse {
   artifacts: ArtifactCard[];
+  file_count: number;
+  chunk_count: number;
 }
 
 export interface SourceResponse {

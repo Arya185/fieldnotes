@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
 import { installAppFetchMock } from "./test/appHarness";
@@ -19,6 +19,7 @@ describe("Fieldnotes frontend chat and workspace flows", () => {
     fireEvent.click(screen.getByText("Send"));
     await screen.findByText(/Grounded answer with citation\./);
     expect(screen.getAllByText("Answer artifact").length).toBeGreaterThan(0);
+    expect(screen.getAllByLabelText("Saved to Notebook").length).toBeGreaterThan(0);
   });
 
   it("supports retry and regenerate", async () => {
@@ -71,6 +72,92 @@ describe("Fieldnotes frontend chat and workspace flows", () => {
       expect(screen.getByText("/tmp/alpha")).toBeInTheDocument();
       expect(screen.getByText("/tmp/beta")).toBeInTheDocument();
     });
+  });
+
+  it("uses backend notebook count for previously indexed recent workspace", async () => {
+    window.localStorage.setItem(
+      "fieldnotes.workspaces",
+      JSON.stringify([
+        {
+          workspaceId: "ws_alpha",
+          folderPath: "/tmp/alpha",
+          title: "alpha",
+          lastIndexedAt: "2026-07-20T00:00:00Z",
+          status: "ready",
+        },
+        {
+          workspaceId: "ws_beta",
+          folderPath: "/tmp/beta",
+          title: "beta",
+          lastIndexedAt: "2026-07-20T00:00:00Z",
+          status: "ready",
+        },
+      ]),
+    );
+    window.localStorage.setItem("fieldnotes.indexHistory", JSON.stringify([]));
+
+    render(<App />);
+
+    await screen.findByText("3 docs");
+    fireEvent.click(screen.getByText("/tmp/beta"));
+    await screen.findByText("7 docs");
+    expect(screen.queryByText("0 docs")).not.toBeInTheDocument();
+  });
+
+  it("shows hidden-artifacts message in context panel when notebook entries are all hidden", async () => {
+    window.localStorage.setItem(
+      "fieldnotes.workspaces",
+      JSON.stringify([
+        {
+          workspaceId: "ws_alpha",
+          folderPath: "/tmp/alpha",
+          title: "alpha",
+          lastIndexedAt: "2026-07-20T00:00:00Z",
+          status: "ready",
+        },
+      ]),
+    );
+    window.localStorage.setItem(
+      "fieldnotes.noteOverrides",
+      JSON.stringify({
+        ws_alpha: {
+          hiddenIds: ["artifact_1", "artifact_2"],
+          pinnedIds: [],
+          renamedTitles: {},
+        },
+      }),
+    );
+
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Notebook" }));
+    await screen.findByText("2 artifact(s) hidden or filtered out.");
+    expect(screen.queryByText("No notebook entries yet.")).not.toBeInTheDocument();
+  });
+
+  it("clears stale route status when switching tabs", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/quiz/start")) {
+        return new Promise<Response>(() => undefined);
+      }
+      return originalFetch(input, init);
+    }) as typeof fetch;
+
+    render(<App />);
+    fireEvent.change(screen.getByLabelText("Workspace folder"), { target: { value: "/tmp/alpha" } });
+    fireEvent.click(screen.getByText("Index Workspace"));
+    await screen.findAllByText("Indexed 1 file.");
+
+    fireEvent.click(screen.getByText("quiz"));
+    fireEvent.click(screen.getByText("Start Quiz"));
+    expect((await screen.findAllByText("Generating quiz...")).length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByText("chat"));
+    await screen.findByText("Ask your workspace");
+    expect(screen.getAllByText("Ready.").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Generating quiz...")).not.toBeInTheDocument();
   });
 
   it("shows error state for workspace validation", async () => {

@@ -68,6 +68,7 @@ export function SourceRoute({
           <div className="toolbar compact source-tools">
             <input
               aria-label="Search within source"
+              id="source-search"
               className="input"
               placeholder="Search within source"
               value={sourceSearch}

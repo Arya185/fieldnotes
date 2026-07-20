@@ -4,7 +4,7 @@ export interface StoredWorkspaceRecord {
   title: string;
   lastIndexedAt?: string;
   lastRunId?: string;
-  status: "idle" | "indexing" | "ready" | "error";
+  status: "idle" | "indexing" | "ready" | "empty" | "error";
 }
 
 export interface IndexHistoryEntry {

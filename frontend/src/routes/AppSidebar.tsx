@@ -53,6 +53,30 @@ export function AppSidebar({
   formatDateTime,
   formatRelative,
 }: AppSidebarProps) {
+  function workspaceStatusTone(status: StoredWorkspaceRecord["status"] | undefined): string {
+    if (status === "ready") {
+      return "success";
+    }
+    if (status === "empty" || status === "error") {
+      return "danger";
+    }
+    return "";
+  }
+
+  function workspaceStatusLabel(status: StoredWorkspaceRecord["status"] | undefined): string {
+    if (status === "empty") {
+      return "0 files indexed";
+    }
+    return status ?? "none";
+  }
+
+  function workspaceStatusHint(status: StoredWorkspaceRecord["status"] | undefined): string | null {
+    if (status !== "empty") {
+      return null;
+    }
+    return "No searchable content found. Check folder path and supported file types: pdf, pptx, docx, md, txt, csv.";
+  }
+
   return (
     <aside className="sidebar panel">
       <section className="section sidebar-top">
@@ -93,10 +117,15 @@ export function AppSidebar({
             <div className="eyebrow">Workspace</div>
             {!sidebarCollapsed && <strong>Study folder</strong>}
           </div>
-          {!sidebarCollapsed && <span className="pill">{activeWorkspace?.status ?? "none"}</span>}
+          {!sidebarCollapsed && (
+            <span className={`pill ${workspaceStatusTone(activeWorkspace?.status)}`}>
+              {workspaceStatusLabel(activeWorkspace?.status)}
+            </span>
+          )}
         </div>
         <input
           aria-label="Workspace folder"
+          id="workspace-folder-path"
           className="input"
           placeholder={sidebarCollapsed ? "/path..." : "/path/to/workspace"}
           value={folderPath}
@@ -121,6 +150,9 @@ export function AppSidebar({
           )}
         </div>
         {!sidebarCollapsed && <p className="muted">{starterSummary}</p>}
+        {!sidebarCollapsed && workspaceStatusHint(activeWorkspace?.status) && (
+          <div className="hint-card">{workspaceStatusHint(activeWorkspace?.status)}</div>
+        )}
         {!sidebarCollapsed && !activeWorkspace && (
           <div className="hint-card">Start by choosing workspace, indexing it, then asking grounded questions.</div>
         )}
@@ -156,8 +188,8 @@ export function AppSidebar({
                   <strong>{workspace.title}</strong>
                 </div>
                 {!sidebarCollapsed && (
-                  <span className={`pill ${workspace.status === "ready" ? "success" : workspace.status === "error" ? "danger" : ""}`}>
-                    {workspace.status}
+                  <span className={`pill ${workspaceStatusTone(workspace.status)}`}>
+                    {workspaceStatusLabel(workspace.status)}
                   </span>
                 )}
               </header>

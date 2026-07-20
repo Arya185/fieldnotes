@@ -43,6 +43,7 @@ from backend.storage import (
     load_artifact_row,
     load_chunk_by_anchor,
     load_file_path_by_id,
+    load_workspace_counts,
 )
 from backend.release import FakeLLMClient
 
@@ -203,9 +204,10 @@ async def get_notebook(workspace_record: WorkspaceRecord = Depends(get_workspace
     connection = connect_sqlite(workspace_record.db_path)
     try:
         artifacts = load_all_artifacts(connection)
+        file_count, chunk_count = load_workspace_counts(connection)
     finally:
         connection.close()
-    return NotebookResponse(artifacts=artifacts)
+    return NotebookResponse(artifacts=artifacts, file_count=file_count, chunk_count=chunk_count)
 
 
 @app.get("/artifact/{artifact_id}")

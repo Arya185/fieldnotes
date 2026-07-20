@@ -239,6 +239,7 @@ export default function App() {
         }}
         onOpenSourceAnchor={(anchor) => void app.handleJumpToSource(anchor)}
         onOpenArtifact={(artifact) => void app.handleOpenArtifact(artifact)}
+        onResetArtifactVisibility={app.resetArtifactVisibility}
       />
     </div>
   );

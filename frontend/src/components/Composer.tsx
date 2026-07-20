@@ -15,6 +15,7 @@ export function Composer({ value, inputRef, activeWorkspaceId, busy, onChange, o
     <footer className="composer elevated-composer">
       <textarea
         aria-label="Ask Fieldnotes"
+        id="ask-composer-textarea"
         className="textarea"
         placeholder="Ask grounded question..."
         value={value}

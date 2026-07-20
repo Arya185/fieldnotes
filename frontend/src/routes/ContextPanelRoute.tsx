@@ -24,6 +24,7 @@ interface ContextPanelRouteProps {
   onSetContextTab: (tab: ContextTab) => void;
   onOpenSourceAnchor: (anchor: string | undefined) => void;
   onOpenArtifact: (artifact: ArtifactCard) => void;
+  onResetArtifactVisibility: () => void;
 }
 
 export function ContextPanelRoute({
@@ -42,6 +43,7 @@ export function ContextPanelRoute({
   onSetContextTab,
   onOpenSourceAnchor,
   onOpenArtifact,
+  onResetArtifactVisibility,
 }: ContextPanelRouteProps) {
   return (
     <aside className="rightbar panel">
@@ -123,8 +125,17 @@ export function ContextPanelRoute({
           {contextTab === "notebook" && (
             <section className="section context-body">
               <strong>Notebook preview</strong>
-              {filteredArtifacts.length === 0 ? (
+              {notebook.artifacts.length === 0 ? (
                 <div className="hint-card">No notebook entries yet. Ask question or finish quiz to collect study artifacts.</div>
+              ) : filteredArtifacts.length === 0 ? (
+                <div className="hint-card">
+                  {notebook.artifacts.length} artifact(s) hidden or filtered out.
+                  <div className="toolbar compact">
+                    <button className="button secondary" onClick={onResetArtifactVisibility}>
+                      Clear Filters
+                    </button>
+                  </div>
+                </div>
               ) : (
                 <div className="artifact-list">
                   {filteredArtifacts.slice(0, 4).map((artifact) => (

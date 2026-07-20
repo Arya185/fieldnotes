@@ -332,8 +332,8 @@ async def stream_ask_events(
                 event="step",
                 answer_id=answer_id,
                 step="grounding",
-                label="answer grounded",
-                status="ok",
+                label="answer grounded" if retrieval_results else "no supporting sources found",
+                status="ok" if retrieval_results else "no_match",
             ).model_dump()
         )
 
@@ -348,7 +348,7 @@ async def stream_ask_events(
         if code_chip is not None:
             raw_chips.append(code_chip)
 
-        concepts = client.extract_concepts(request.question, retrieval_results)
+        concepts = client.extract_concepts(request.question, retrieval_results) if retrieval_results else []
         artifact_event = ArtifactEvent(
             event="artifact",
             answer_id=answer_id,
@@ -398,13 +398,14 @@ async def stream_ask_events(
                 chips=valid_chips,
             ).model_dump()
         )
-        yield sse(
-            ConceptsEvent(
-                event="concepts",
-                answer_id=answer_id,
-                updates=concepts,
-            ).model_dump()
-        )
+        if concepts:
+            yield sse(
+                ConceptsEvent(
+                    event="concepts",
+                    answer_id=answer_id,
+                    updates=concepts,
+                ).model_dump()
+            )
         yield sse(DoneEvent(event="done", answer_id=answer_id).model_dump())
     except Exception as exc:
         yield sse(

@@ -227,6 +227,47 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertEqual(event_names[-2:], ["index_complete", "brief_ready"])
         self.assertLess(event_names.index("file_started"), event_names.index("file_parsed"))
 
+    @patch("backend.services.ask.load_fallback_retrieval", return_value=[])
+    def test_empty_workspace_is_indexed_but_not_treated_as_ready_content(self, _fallback) -> None:
+        ws = self.base / "empty-index"
+        ws.mkdir(parents=True, exist_ok=True)
+        (ws / "image.jpg").write_text("not an indexable file", encoding="utf-8")
+
+        response = self.client.post("/index", json={"folder_path": str(ws)})
+        payloads = parse_sse_payloads(self.client.get(response.json()["events"]).text)
+
+        index_complete = next(payload for payload in payloads if payload["event"] == "index_complete")
+        self.assertEqual(index_complete["file_count"], 0)
+        self.assertEqual(index_complete["chunk_count"], 0)
+
+        notebook = self.client.get("/notebook", params={"workspace_id": response.json()["workspace_id"]})
+        self.assertEqual(notebook.status_code, 200)
+        self.assertEqual(notebook.json()["file_count"], 0)
+        self.assertEqual(notebook.json()["chunk_count"], 0)
+
+        ask = self.client.post(
+            "/ask",
+            json={"workspace_id": response.json()["workspace_id"], "question": "Summarize this workspace"},
+        )
+        ask_payloads = parse_sse_payloads(ask.text)
+        grounding = next(
+            payload
+            for payload in ask_payloads
+            if payload["event"] == "step" and payload["step"] == "grounding" and payload["status"] != "started"
+        )
+        self.assertEqual(grounding["status"], "no_match")
+        self.assertEqual(grounding["label"], "no supporting sources found")
+
+        quiz = self.client.post(
+            "/quiz/start",
+            json={"workspace_id": response.json()["workspace_id"], "concept_ids": []},
+        )
+        quiz_payloads = parse_sse_payloads(quiz.text)
+        error_event = next(payload for payload in quiz_payloads if payload["event"] == "error")
+        self.assertEqual(error_event["code"], "INVALID_REQUEST")
+        self.assertIn("no searchable content", error_event["message"].lower())
+        self.assertIn("supported file types", error_event["message"].lower())
+
     def test_reindex_ignores_fieldnotes_internal_state(self) -> None:
         ws = self.base / "reindex"
         build_workspace(ws, "alpha.txt", "alpha unique content")
@@ -274,6 +315,79 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertFalse(any("beta.txt" in label for label in labels1))
         self.assertTrue(any("beta.txt" in label for label in labels2))
         self.assertFalse(any("alpha.txt" in label for label in labels2))
+
+    @patch("backend.main.llm_client", new_callable=lambda: FakeLLMClient())
+    def test_ask_grounding_step_reports_ok_when_retrieval_has_results(self, _fake_llm) -> None:
+        ws = self.base / "ask-grounded"
+        build_workspace(ws, "alpha.txt", "alpha topic only")
+        index = self.client.post("/index", json={"folder_path": str(ws)}).json()
+        self.client.get(index["events"])
+
+        ask = self.client.post(
+            "/ask",
+            json={"workspace_id": index["workspace_id"], "question": "alpha"},
+        )
+        payloads = parse_sse_payloads(ask.text)
+        grounding = next(
+            payload
+            for payload in payloads
+            if payload["event"] == "step" and payload["step"] == "grounding" and payload["status"] != "started"
+        )
+        self.assertEqual(grounding["status"], "ok")
+        self.assertEqual(grounding["label"], "answer grounded")
+
+    @patch("backend.services.ask.load_fallback_retrieval", return_value=[])
+    def test_ask_grounding_step_reports_no_match_when_retrieval_is_empty(self, _fallback) -> None:
+        class EmptyRetrievalLLM(FakeLLMClient):
+            def resolve_retrieval(self, question: str, retrieval_provider):
+                return []
+
+        ws = self.base / "ask-no-match"
+        build_workspace(ws, "alpha.txt", "alpha topic only")
+        index = self.client.post("/index", json={"folder_path": str(ws)}).json()
+        self.client.get(index["events"])
+
+        with patch("backend.main.llm_client", new=EmptyRetrievalLLM()):
+            ask = self.client.post(
+                "/ask",
+                json={"workspace_id": index["workspace_id"], "question": "missing topic"},
+            )
+
+        payloads = parse_sse_payloads(ask.text)
+        grounding = next(
+            payload
+            for payload in payloads
+            if payload["event"] == "step" and payload["step"] == "grounding" and payload["status"] != "started"
+        )
+        self.assertEqual(grounding["status"], "no_match")
+        self.assertEqual(grounding["label"], "no supporting sources found")
+
+    @patch("backend.services.ask.load_fallback_retrieval", return_value=[])
+    def test_ask_emits_no_concepts_and_persists_none_when_retrieval_is_empty(self, _fallback) -> None:
+        class EmptyRetrievalLLM(FakeLLMClient):
+            def resolve_retrieval(self, question: str, retrieval_provider):
+                return []
+
+        ws = self.base / "ask-no-concepts"
+        build_workspace(ws, "alpha.txt", "alpha topic only")
+        index = self.client.post("/index", json={"folder_path": str(ws)}).json()
+        self.client.get(index["events"])
+
+        with patch("backend.main.llm_client", new=EmptyRetrievalLLM()):
+            ask = self.client.post(
+                "/ask",
+                json={"workspace_id": index["workspace_id"], "question": "missing topic"},
+            )
+
+        payloads = parse_sse_payloads(ask.text)
+        self.assertFalse(any(payload["event"] == "concepts" for payload in payloads))
+
+        connection = connect_sqlite(ws / ".fieldnotes" / "fieldnotes.db")
+        try:
+            concept_count = connection.execute("SELECT COUNT(*) AS count FROM concepts").fetchone()["count"]
+        finally:
+            connection.close()
+        self.assertEqual(concept_count, 0)
 
     @patch("backend.main.llm_client", new_callable=lambda: FakeLLMClient())
     def test_ask_event_sequence_contains_required_events(self, _fake_llm) -> None:

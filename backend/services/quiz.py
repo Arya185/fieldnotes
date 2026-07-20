@@ -69,7 +69,9 @@ async def stream_quiz_start_events(
             if not retrieval_results:
                 retrieval_results = load_fallback_retrieval(connection, limit=5)
             if not retrieval_results:
-                raise ValueError("No indexed content available for quiz generation")
+                raise ValueError(
+                    "No indexed content available for quiz generation. Re-check the folder path and supported file types (pdf, pptx, docx, md, txt, csv)."
+                )
 
             question = client.generate_quiz_question(
                 retrieval_results,

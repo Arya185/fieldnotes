@@ -16,7 +16,7 @@ class StrictModel(BaseModel):
 Intent = Literal["retrieve", "analyze", "visualize", "connect", "quiz"]
 ParseStatus = Literal["parsed", "failed", "skipped"]
 StepType = Literal["retrieval", "codegen", "execution", "grounding", "retry"]
-StepStatus = Literal["started", "ok", "failed"]
+StepStatus = Literal["started", "ok", "failed", "no_match"]
 CitationChipType = Literal["document", "code"]
 ConceptState = Literal["touched", "shaky"]
 ArtifactKind = Literal["chart", "script", "explainer"]
@@ -265,6 +265,8 @@ class ArtifactCard(StrictModel):
 
 class NotebookResponse(StrictModel):
     artifacts: list[ArtifactCard]
+    file_count: int = 0
+    chunk_count: int = 0
 
 
 class SourceResponse(StrictModel):

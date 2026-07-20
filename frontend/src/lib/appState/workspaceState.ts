@@ -18,6 +18,7 @@ import type { ArtifactPreview, ContextTab, NoteOverrides, RouteKey, SourceViewSt
 
 const PINNED_ARTIFACTS_KEY = "fieldnotes.pinnedArtifacts";
 const NOTE_OVERRIDES_KEY = "fieldnotes.noteOverrides";
+const EMPTY_NOTE_OVERRIDES: NoteOverrides = { hiddenIds: [], pinnedIds: [], renamedTitles: {} };
 
 function readPinnedArtifacts(): string[] {
   if (typeof window === "undefined") {
@@ -41,31 +42,57 @@ function writePinnedArtifacts(value: string[]): void {
   window.localStorage.setItem(PINNED_ARTIFACTS_KEY, JSON.stringify(value));
 }
 
-function readNoteOverrides(): NoteOverrides {
+function readNoteOverrides(workspaceId: string | null): NoteOverrides {
   if (typeof window === "undefined") {
-    return { hiddenIds: [], pinnedIds: [], renamedTitles: {} };
+    return EMPTY_NOTE_OVERRIDES;
   }
   const raw = window.localStorage.getItem(NOTE_OVERRIDES_KEY);
   if (!raw) {
-    return { hiddenIds: [], pinnedIds: [], renamedTitles: {} };
+    return EMPTY_NOTE_OVERRIDES;
   }
   try {
-    const parsed = JSON.parse(raw) as Partial<NoteOverrides>;
+    const parsed = JSON.parse(raw) as Partial<NoteOverrides> | Record<string, Partial<NoteOverrides>>;
+    const scoped: Partial<NoteOverrides> =
+      workspaceId &&
+      !Array.isArray(parsed) &&
+      !("hiddenIds" in parsed) &&
+      !("pinnedIds" in parsed) &&
+      !("renamedTitles" in parsed)
+        ? (parsed as Record<string, Partial<NoteOverrides>>)[workspaceId]
+        : (parsed as Partial<NoteOverrides>);
     return {
-      hiddenIds: parsed.hiddenIds ?? [],
-      pinnedIds: parsed.pinnedIds ?? [],
-      renamedTitles: parsed.renamedTitles ?? {},
+      hiddenIds: scoped?.hiddenIds ?? [],
+      pinnedIds: scoped?.pinnedIds ?? [],
+      renamedTitles: scoped?.renamedTitles ?? {},
     };
   } catch {
-    return { hiddenIds: [], pinnedIds: [], renamedTitles: {} };
+    return EMPTY_NOTE_OVERRIDES;
   }
 }
 
-function writeNoteOverrides(value: NoteOverrides): void {
+function writeNoteOverrides(workspaceId: string | null, value: NoteOverrides): void {
   if (typeof window === "undefined") {
     return;
   }
-  window.localStorage.setItem(NOTE_OVERRIDES_KEY, JSON.stringify(value));
+  const raw = window.localStorage.getItem(NOTE_OVERRIDES_KEY);
+  let current: Record<string, NoteOverrides> = {};
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as Partial<NoteOverrides> | Record<string, NoteOverrides>;
+      if (!Array.isArray(parsed) && "hiddenIds" in parsed) {
+        current = workspaceId ? { [workspaceId]: parsed as NoteOverrides } : {};
+      } else {
+        current = (parsed as Record<string, NoteOverrides>) ?? {};
+      }
+    } catch {
+      current = {};
+    }
+  }
+  if (!workspaceId) {
+    return;
+  }
+  current[workspaceId] = value;
+  window.localStorage.setItem(NOTE_OVERRIDES_KEY, JSON.stringify(current));
 }
 
 function validateWorkspace(folder: string): string | null {
@@ -105,13 +132,13 @@ export function useWorkspaceState({
   );
   const [starterSummary, setStarterSummary] = useState("No workspace indexed yet. Drop workspace path or type absolute folder path.");
   const [indexEvents, setIndexEvents] = useState<IndexEvent[]>([]);
-  const [notebook, setNotebook] = useState<NotebookResponse>({ artifacts: [] });
+  const [notebook, setNotebook] = useState<NotebookResponse>({ artifacts: [], file_count: 0, chunk_count: 0 });
   const [artifactFilter, setArtifactFilter] = useState("all");
   const [artifactSearch, setArtifactSearch] = useState("");
   const [artifactSort, setArtifactSort] = useState<"newest" | "oldest">("newest");
   const [artifactPreview, setArtifactPreview] = useState<ArtifactPreview | null>(null);
   const [pinnedArtifacts, setPinnedArtifacts] = useState<string[]>(readPinnedArtifacts);
-  const [noteOverrides, setNoteOverrides] = useState<NoteOverrides>(readNoteOverrides);
+  const [noteOverrides, setNoteOverrides] = useState<NoteOverrides>(() => readNoteOverrides(loadRecentWorkspaces()[0]?.workspaceId ?? null));
   const [sourceView, setSourceView] = useState<SourceViewState>({});
   const [developerSummary, setDeveloperSummary] = useState<BenchmarkSummary | null>(null);
   const [dragActive, setDragActive] = useState(false);
@@ -121,10 +148,7 @@ export function useWorkspaceState({
   const { startIndexStream } = useIndexStream();
 
   const activeWorkspace = recentWorkspaces.find((workspace) => workspace.workspaceId === activeWorkspaceId);
-  const indexedDocumentCount = useMemo(() => {
-    const latest = indexHistory.find((entry) => entry.workspaceId === activeWorkspaceId && entry.fileCount !== undefined);
-    return latest?.fileCount ?? 0;
-  }, [activeWorkspaceId, indexHistory]);
+  const indexedDocumentCount = notebook.file_count;
   const lastIndexEntry = useMemo(
     () => indexHistory.find((entry) => entry.workspaceId === activeWorkspaceId),
     [activeWorkspaceId, indexHistory],
@@ -147,18 +171,22 @@ export function useWorkspaceState({
   }, [pinnedArtifacts]);
 
   useEffect(() => {
-    writeNoteOverrides(noteOverrides);
-  }, [noteOverrides]);
+    writeNoteOverrides(activeWorkspaceId, noteOverrides);
+  }, [activeWorkspaceId, noteOverrides]);
+
+  useEffect(() => {
+    setNoteOverrides(readNoteOverrides(activeWorkspaceId));
+  }, [activeWorkspaceId]);
 
   useEffect(() => {
     if (!activeWorkspaceId) {
-      setNotebook({ artifacts: [] });
+      setNotebook({ artifacts: [], file_count: 0, chunk_count: 0 });
       return;
     }
     void getNotebook(activeWorkspaceId)
       .then(setNotebook)
       .catch((error: Error) => {
-        setNotebook({ artifacts: [] });
+        setNotebook({ artifacts: [], file_count: 0, chunk_count: 0 });
         setErrorMessage(`Notebook load failed: ${error.message}`);
       });
   }, [activeWorkspaceId, setErrorMessage]);
@@ -241,7 +269,7 @@ export function useWorkspaceState({
       setNotebook(data);
     } catch (error) {
       setErrorMessage(`Workspace not found: ${(error as Error).message}`);
-      setNotebook({ artifacts: [] });
+      setNotebook({ artifacts: [], file_count: 0, chunk_count: 0 });
     }
   }
 
@@ -271,6 +299,16 @@ export function useWorkspaceState({
     setStatusMessage("Note removed from current workspace view.");
   }
 
+  function resetArtifactVisibility() {
+    setArtifactFilter("all");
+    setArtifactSearch("");
+    setNoteOverrides((current) => ({
+      ...current,
+      hiddenIds: [],
+    }));
+    setStatusMessage("Artifact filters cleared.");
+  }
+
   function clearActiveWorkspace() {
     if (!activeWorkspace || !window.confirm(`Clear workspace "${activeWorkspace.title}" from recent list?`)) {
       return;
@@ -282,7 +320,7 @@ export function useWorkspaceState({
         ? recentWorkspaces.find((item) => item.workspaceId !== current)?.workspaceId ?? null
         : current,
     );
-    setNotebook({ artifacts: [] });
+    setNotebook({ artifacts: [], file_count: 0, chunk_count: 0 });
     setSourceView({});
     setStatusMessage("Workspace cleared from recent list.");
   }
@@ -324,14 +362,16 @@ export function useWorkspaceState({
       ...current,
     ]);
     setIndexEvents([]);
+    let indexedChunkCount: number | null = null;
     await startIndexStream(
       accepted.events,
       (event) => {
         setIndexEvents((current) => [...current, event]);
         if (event.event === "brief_ready") {
           setStarterSummary(event.brief.summary);
+          const workspaceStatus = indexedChunkCount === 0 ? "empty" : "ready";
           updateWorkspaceRecord(accepted.workspace_id, {
-            status: "ready",
+            status: workspaceStatus,
             lastIndexedAt: new Date().toISOString(),
             lastRunId: accepted.run_id,
           });
@@ -342,11 +382,16 @@ export function useWorkspaceState({
                 : entry,
             ),
           );
-          setStatusMessage("Workspace indexed.");
+          setStatusMessage(
+            indexedChunkCount === 0
+              ? "Workspace indexed, but no supported content produced searchable chunks."
+              : "Workspace indexed.",
+          );
           setBusy(false);
           void loadNotebookForWorkspace(accepted.workspace_id);
         }
         if (event.event === "index_complete") {
+          indexedChunkCount = event.chunk_count;
           setIndexHistory((current) =>
             current.map((entry) =>
               entry.runId === accepted.run_id
@@ -519,6 +564,7 @@ export function useWorkspaceState({
     handleDropWorkspace,
     renameArtifact,
     deleteArtifact,
+    resetArtifactVisibility,
     clearActiveWorkspace,
     updateWorkspaceRecord,
   };

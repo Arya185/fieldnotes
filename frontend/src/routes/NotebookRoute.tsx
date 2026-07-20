@@ -69,6 +69,7 @@ export function NotebookRoute({
       <div className="toolbar">
         <input
           aria-label="Search artifacts"
+          id="artifact-search"
           className="input"
           placeholder="Search artifacts"
           value={artifactSearch}

@@ -35,14 +35,32 @@ export function installAppFetchMock() {
     if (url.endsWith("/index") && init?.method === "POST") {
       const payload = init.body ? (JSON.parse(String(init.body)) as { folder_path?: string }) : {};
       const isBeta = payload.folder_path?.includes("beta");
-      const workspaceId = isBeta ? "ws_beta" : "ws_alpha";
-      const runId = isBeta ? "run_beta" : "run_alpha";
+      const isEmpty = payload.folder_path?.includes("empty");
+      const workspaceId = isEmpty ? "ws_empty" : isBeta ? "ws_beta" : "ws_alpha";
+      const runId = isEmpty ? "run_empty" : isBeta ? "run_beta" : "run_alpha";
       return makeJsonResponse({
         status: "accepted",
         workspace_id: workspaceId,
         run_id: runId,
         events: `/index/events/${runId}`,
       });
+    }
+    if (url.endsWith("/index/events/run_empty")) {
+      return makeSseResponse([
+        { event: "index_complete", file_count: 0, chunk_count: 0 },
+        {
+          event: "brief_ready",
+          brief: {
+            course_title: "empty",
+            summary: "Indexed 0 files.",
+            starter_cards: [
+              { text: "Check the folder path", file_path: "", seed: "practice" },
+              { text: "Review supported file types", file_path: "", seed: "concept" },
+              { text: "Try another workspace", file_path: "", seed: "practice" },
+            ],
+          },
+        },
+      ]);
     }
     if (url.endsWith("/index/events/run_alpha") || url.endsWith("/index/events/run_beta")) {
       return makeSseResponse([
@@ -91,6 +109,8 @@ export function installAppFetchMock() {
     }
     if (url.includes("/notebook?workspace_id=ws_alpha")) {
       return makeJsonResponse({
+        file_count: 3,
+        chunk_count: 8,
         artifacts: [
           {
             id: "artifact_1",
@@ -107,6 +127,20 @@ export function installAppFetchMock() {
             url: "/artifact/artifact_2",
           },
         ],
+      });
+    }
+    if (url.includes("/notebook?workspace_id=ws_beta")) {
+      return makeJsonResponse({
+        file_count: 7,
+        chunk_count: 19,
+        artifacts: [],
+      });
+    }
+    if (url.includes("/notebook?workspace_id=ws_empty")) {
+      return makeJsonResponse({
+        file_count: 0,
+        chunk_count: 0,
+        artifacts: [],
       });
     }
     if (url.includes("/artifact/artifact_1")) {

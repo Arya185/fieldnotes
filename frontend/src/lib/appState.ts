@@ -8,6 +8,15 @@ import { getInitialRoute, routes, formatDateTime, formatRelative, copyText } fro
 import { useQuizState } from "./appState/quizState";
 import { useWorkspaceState } from "./appState/workspaceState";
 
+const DEFAULT_STATUS_BY_ROUTE: Record<RouteKey, string> = {
+  workspace: "Ready.",
+  chat: "Ready.",
+  notebook: "Notebook ready.",
+  quiz: "Ready to quiz.",
+  source: "Source viewer ready.",
+  developer: "Diagnostics ready.",
+};
+
 export type {
   ArtifactPreview,
   ChatMessage,
@@ -115,6 +124,26 @@ export function useFieldnotesApp(composerRef: RefObject<HTMLTextAreaElement | nu
               ? "Developer diagnostics"
               : "Workspace overview";
 
+  function routeHasActiveOperation(nextRoute: RouteKey) {
+    if (nextRoute === "workspace") {
+      return workspace.activeWorkspace?.status === "indexing";
+    }
+    if (nextRoute === "chat") {
+      return ask.streamingAnswerId !== null;
+    }
+    if (nextRoute === "quiz") {
+      return busy && quiz.quizState.completion === undefined;
+    }
+    return false;
+  }
+
+  function navigateToRoute(nextRoute: RouteKey) {
+    setRoute(nextRoute);
+    if (!routeHasActiveOperation(nextRoute)) {
+      setStatusMessage(DEFAULT_STATUS_BY_ROUTE[nextRoute]);
+    }
+  }
+
   async function exportArtifact(card: { id: string }) {
     if (!workspace.activeWorkspaceId) {
       return;
@@ -155,7 +184,7 @@ export function useFieldnotesApp(composerRef: RefObject<HTMLTextAreaElement | nu
 
   return {
     route,
-    setRoute,
+    setRoute: navigateToRoute,
     visibleRoutes,
     currentTitle,
     sidebarCollapsed,
@@ -243,6 +272,7 @@ export function useFieldnotesApp(composerRef: RefObject<HTMLTextAreaElement | nu
     clearActiveWorkspace,
     loadNotebookForWorkspace: workspace.loadNotebookForWorkspace,
     setPinnedArtifacts: workspace.setPinnedArtifacts,
+    resetArtifactVisibility: workspace.resetArtifactVisibility,
     onChatScroll: ask.onChatScroll,
     formatDateTime,
     formatRelative,

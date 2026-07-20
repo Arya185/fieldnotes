@@ -82,4 +82,15 @@ describe("Fieldnotes frontend notebook, quiz, and source flows", () => {
     await screen.findByText("alpha source text");
     expect(screen.getByText(/alpha.txt → alpha.txt block1 → block1\/b1/)).toBeInTheDocument();
   });
+
+  it("shows a non-ready empty workspace state when indexing produces zero chunks", async () => {
+    render(<App />);
+    fireEvent.change(screen.getByLabelText("Workspace folder"), { target: { value: "/tmp/empty" } });
+    fireEvent.click(screen.getByText("Index Workspace"));
+    await screen.findAllByText("Workspace indexed, but no supported content produced searchable chunks.");
+    expect(screen.getAllByText("0 files indexed").length).toBeGreaterThan(0);
+    expect(
+      screen.getByText(/No searchable content found\. Check folder path and supported file types:/),
+    ).toBeInTheDocument();
+  });
 });

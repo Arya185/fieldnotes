@@ -54,6 +54,13 @@ def build_public_error(exc: Exception) -> PublicError:
         return PublicError("INVALID_REQUEST", "Requested quiz attempt was not found.", True, 404)
     if "Quiz attempt already answered" in text:
         return PublicError("INVALID_REQUEST", "Quiz attempt has already been answered.", True, 400)
+    if "No indexed content available for quiz generation" in text:
+        return PublicError(
+            "INVALID_REQUEST",
+            "This workspace has no searchable content yet. Re-check the folder path and supported file types, then re-index.",
+            True,
+            400,
+        )
     if "sandbox" in text.lower() or "analysis completed locally" in text.lower():
         return PublicError("SANDBOX_ERROR", "Local analysis failed to complete safely.", True, 500)
     if "Analysis sandbox" in text:

@@ -112,6 +112,10 @@ export function ChatRoute({
             <div className="stack">
               {message.artifacts.map((artifact) => (
                 <div className="artifact-preview" key={`${message.id}-${artifact.artifact_id}-${artifact.title}`}>
+                  <div className="artifact-preview-badge" aria-label="Saved to Notebook">
+                    <span aria-hidden="true">📝</span>
+                    <span>Saved to Notebook</span>
+                  </div>
                   <div className="split-row">
                     <strong>{artifact.title || artifact.kind}</strong>
                     <button

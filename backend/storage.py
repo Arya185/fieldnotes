@@ -544,6 +544,14 @@ def load_all_artifacts(connection: sqlite3.Connection) -> list[ArtifactCard]:
     ]
 
 
+def load_workspace_counts(connection: sqlite3.Connection) -> tuple[int, int]:
+    """Load persisted file and chunk totals for one workspace."""
+
+    file_count = int(connection.execute("SELECT COUNT(*) AS count FROM files").fetchone()["count"])
+    chunk_count = int(connection.execute("SELECT COUNT(*) AS count FROM chunks").fetchone()["count"])
+    return file_count, chunk_count
+
+
 def load_artifact_row(connection: sqlite3.Connection, artifact_id: str) -> sqlite3.Row | None:
     """Load raw artifact storage record."""
 

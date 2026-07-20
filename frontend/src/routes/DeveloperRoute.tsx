@@ -21,6 +21,7 @@ export function DeveloperRoute({
           <strong>Retrieval Transparency</strong>
           <input
             aria-label="Load benchmark summary"
+            id="benchmark-import-file"
             className="input"
             type="file"
             accept="application/json"
