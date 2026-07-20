@@ -21,7 +21,6 @@ def inspect_retrieval(
     candidates: list[RetrievalChunk],
     rerank_result: RerankResult,
 ) -> RetrievalInspection:
-    selected_keys = {(chunk.file_id, chunk.anchor) for chunk in rerank_result.selected_chunks}
     reranked = [_row(chunk) for chunk in rerank_result.selected_chunks]
     discarded = [
         _decision_row(decision)

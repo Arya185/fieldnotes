@@ -227,9 +227,9 @@ def cosine_similarity(left: list[float], right: list[float]) -> float:
 
     if len(left) != len(right) or not left:
         return 0.0
-    dot = sum(l * r for l, r in zip(left, right, strict=True))
-    left_norm = math.sqrt(sum(l * l for l in left))
-    right_norm = math.sqrt(sum(r * r for r in right))
+    dot = sum(left_value * right_value for left_value, right_value in zip(left, right, strict=True))
+    left_norm = math.sqrt(sum(left_value * left_value for left_value in left))
+    right_norm = math.sqrt(sum(right_value * right_value for right_value in right))
     if left_norm == 0 or right_norm == 0:
         return 0.0
     return dot / (left_norm * right_norm)
