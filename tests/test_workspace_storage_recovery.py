@@ -4,7 +4,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from fastapi.testclient import TestClient
 
@@ -12,6 +12,7 @@ from backend.db import (
     REINDEX_REQUIRED_WORKSPACE_WARNING,
     REPAIRED_WORKSPACE_WARNING,
     WorkspaceStorageRecoveryError,
+    _quarantine_database_files,
     clear_storage_warning,
     connect_sqlite,
     latest_storage_warning,
@@ -58,11 +59,11 @@ class WorkspaceStorageRecoveryTests(unittest.TestCase):
         self.db_path.write_bytes(b"not sqlite")
         Path(f"{self.db_path}-wal").write_bytes(b"broken wal")
         Path(f"{self.db_path}-shm").write_bytes(b"broken shm")
-        with self.assertRaises(WorkspaceStorageRecoveryError):
-            connect_sqlite(self.db_path)
-        names = {path.name for path in self.db_path.parent.iterdir()}
-        self.assertTrue(any(name.startswith("fieldnotes.db-wal.corrupt-") for name in names))
-        self.assertTrue(any(name.startswith("fieldnotes.db-shm.corrupt-") for name in names))
+        quarantined = _quarantine_database_files(self.db_path)
+        quarantined_names = {path.name for path in quarantined}
+        self.assertTrue(any(name.startswith("fieldnotes.db.corrupt-") for name in quarantined_names))
+        self.assertTrue(any(name.startswith("fieldnotes.db-wal.corrupt-") for name in quarantined_names))
+        self.assertTrue(any(name.startswith("fieldnotes.db-shm.corrupt-") for name in quarantined_names))
 
     def test_artifact_metadata_rehydrated_when_rebuild_unavailable(self) -> None:
         initialize_workspace(self.workspace)
@@ -103,6 +104,14 @@ class WorkspaceStorageRecoveryTests(unittest.TestCase):
         response = self.client.get("/health")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["storage_warning"], REPAIRED_WORKSPACE_WARNING)
+
+    def test_connection_setup_failure_closes_handle_before_recovery(self) -> None:
+        fake_connection = Mock()
+        fake_connection.execute.side_effect = [None, sqlite3.DatabaseError("file is not a database")]
+        with patch("backend.db.sqlite3.connect", return_value=fake_connection):
+            with self.assertRaises(sqlite3.DatabaseError):
+                connect_sqlite(self.db_path, validate_integrity=False)
+        fake_connection.close.assert_called_once()
 
 
 if __name__ == "__main__":

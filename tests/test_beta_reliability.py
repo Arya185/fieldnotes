@@ -6,8 +6,9 @@ import unittest
 from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
+from uuid import uuid4
 
-os.environ.setdefault("OPENAI_API_KEY", "test-key")
+os.environ.setdefault("FIELDNOTES_USE_FAKE_LLM", "1")
 
 from backend import config as backend_config
 from backend.db import connect_sqlite
@@ -111,8 +112,10 @@ class BetaReliabilityTests(unittest.TestCase):
 
     def test_dotenv_values_are_loaded_without_overriding_shell(self) -> None:
         dotenv_path = self.base / ".env"
+        dotenv_key = str(uuid4())
+        shell_key = str(uuid4())
         dotenv_path.write_text(
-            "OPENAI_API_KEY=dotenv-key\n"
+            f"OPENAI_API_KEY={dotenv_key}\n"
             "FIELDNOTES_USE_FAKE_LLM=0\n"
             "OPENAI_MODEL=gpt-5\n",
             encoding="utf-8",
@@ -123,13 +126,13 @@ class BetaReliabilityTests(unittest.TestCase):
             os.environ.pop("OPENAI_API_KEY", None)
             loaded = backend_config.load_project_dotenv(dotenv_path)
             self.assertTrue(loaded)
-            self.assertEqual(os.environ["OPENAI_API_KEY"], "dotenv-key")
+            self.assertEqual(os.environ["OPENAI_API_KEY"], dotenv_key)
 
         with ExitStack() as stack:
-            stack.enter_context(patch.dict(os.environ, {"OPENAI_API_KEY": "shell-key"}, clear=False))
+            stack.enter_context(patch.dict(os.environ, {"OPENAI_API_KEY": shell_key}, clear=False))
             loaded = backend_config.load_project_dotenv(dotenv_path)
             self.assertTrue(loaded)
-            self.assertEqual(os.environ["OPENAI_API_KEY"], "shell-key")
+            self.assertEqual(os.environ["OPENAI_API_KEY"], shell_key)
 
     def test_missing_dotenv_falls_back_to_fake_mode(self) -> None:
         with ExitStack() as stack:
@@ -153,11 +156,12 @@ class BetaReliabilityTests(unittest.TestCase):
         self.assertTrue(any("Falling back to fake LLM mode." in line for line in logs.output))
 
     def test_openai_api_key_takes_precedence_over_fake_flag(self) -> None:
+        live_key = str(uuid4())
         with ExitStack() as stack:
             stack.enter_context(
                 patch.dict(
                     os.environ,
-                    {"OPENAI_API_KEY": "live-key", "FIELDNOTES_USE_FAKE_LLM": "1"},
+                    {"OPENAI_API_KEY": live_key, "FIELDNOTES_USE_FAKE_LLM": "1"},
                     clear=True,
                 )
             )

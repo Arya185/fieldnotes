@@ -8,6 +8,7 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 from urllib.error import URLError
+from uuid import uuid4
 
 from scripts import exit_phase0
 from scripts import release_check, run_benchmarks
@@ -145,6 +146,7 @@ class ScriptPortabilityTests(unittest.TestCase):
     def test_phase0_reports_live_api_ok_with_credentials(self, probe: object) -> None:
         probe.return_value = type("Probe", (), {"model": "gpt-5"})()  # type: ignore[attr-defined]
         output = StringIO()
+        live_key = str(uuid4())
         with (
             patch("sys.stdout", output),
             patch.object(exit_phase0, "verify_configuration"),
@@ -152,7 +154,7 @@ class ScriptPortabilityTests(unittest.TestCase):
             patch.object(exit_phase0, "verify_fake_mode"),
             patch.object(exit_phase0, "verify_live_validation"),
             patch.object(exit_phase0, "verify_responses_configuration"),
-            patch.dict("os.environ", {"OPENAI_API_KEY": "test-key", "OPENAI_MODEL": "gpt-5"}, clear=True),
+            patch.dict("os.environ", {"OPENAI_API_KEY": live_key, "OPENAI_MODEL": "gpt-5"}, clear=True),
         ):
             exit_code = exit_phase0.main()
 
@@ -166,9 +168,18 @@ class ScriptPortabilityTests(unittest.TestCase):
         )
         self.assertIn("FIELDNOTES_USE_FAKE_LLM: \"1\"", workflow)
         self.assertIn("live-openai-validation", workflow)
-        self.assertIn("if: ${{ secrets.OPENAI_API_KEY != '' }}", workflow)
+        self.assertIn("Skip if no OPENAI_API_KEY", workflow)
         self.assertIn("python scripts/exit_phase0.py", workflow)
         self.assertIn("python -m unittest tests.test_live_responses_api_integration", workflow)
+
+    def test_release_workflow_limits_blas_threads_in_ci(self) -> None:
+        workflow = (Path(__file__).resolve().parents[1] / ".github" / "workflows" / "release.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("OPENBLAS_NUM_THREADS: \"1\"", workflow)
+        self.assertIn("OMP_NUM_THREADS: \"1\"", workflow)
+        self.assertIn("MKL_NUM_THREADS: \"1\"", workflow)
+        self.assertIn("NUMEXPR_NUM_THREADS: \"1\"", workflow)
 
 
 class _FakeProcess:

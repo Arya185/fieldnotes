@@ -7,6 +7,7 @@ import os
 import sys
 from contextlib import contextmanager
 from pathlib import Path
+from uuid import uuid4
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -92,7 +93,7 @@ def verify_responses_configuration() -> None:
     model = env_value("OPENAI_MODEL", DEFAULT_OPENAI_MODEL).strip()
     if not model:
         raise RuntimeError("OPENAI_MODEL must not be empty")
-    with temporary_environment({"FIELDNOTES_USE_FAKE_LLM": "0", "OPENAI_API_KEY": "phase0-verification-key"}):
+    with temporary_environment({"FIELDNOTES_USE_FAKE_LLM": "0", "OPENAI_API_KEY": str(uuid4())}):
         diagnostics = validate_runtime_configuration()
         client = LLMClient(model=model)
     if diagnostics.startup_checks["responses_api"] != "configured" or client.model != model:

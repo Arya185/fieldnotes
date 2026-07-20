@@ -217,11 +217,15 @@ def latest_storage_warning_message() -> str | None:
 
 def _open_sqlite_connection(db_path: Path) -> sqlite3.Connection:
     connection = sqlite3.connect(db_path, check_same_thread=False)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA foreign_keys = ON;")
-    connection.execute("PRAGMA journal_mode = WAL;")
-    connection.execute("PRAGMA busy_timeout = 5000;")
-    return connection
+    try:
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON;")
+        connection.execute("PRAGMA journal_mode = WAL;")
+        connection.execute("PRAGMA busy_timeout = 5000;")
+        return connection
+    except Exception:
+        connection.close()
+        raise
 
 
 def _ensure_workspace_storage_healthy(db_path: Path) -> None:

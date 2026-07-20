@@ -290,6 +290,9 @@ async def post_ask(request: AskRequest, http_request: Request) -> StreamingRespo
                     connection.commit()
                 finally:
                     connection.close()
+                for emitted_artifact in emitted_artifacts:
+                    yield _sse(emitted_artifact.model_dump())
+                emitted_artifacts.clear()
                 if any(step.step_type == "execute_python" for step in execution_context_data.step_executions):
                     yield _sse(
                         StepEvent(
@@ -427,6 +430,9 @@ async def post_ask(request: AskRequest, http_request: Request) -> StreamingRespo
                         connection.commit()
                     finally:
                         connection.close()
+                    for emitted_artifact in emitted_artifacts:
+                        yield _sse(emitted_artifact.model_dump())
+                    emitted_artifacts.clear()
                     execution_context = json.dumps(
                         {
                             "target_file_path": analysis_plan.target_file_path,
@@ -516,8 +522,6 @@ async def post_ask(request: AskRequest, http_request: Request) -> StreamingRespo
             finally:
                 connection.close()
 
-            for emitted_artifact in emitted_artifacts:
-                yield _sse(emitted_artifact.model_dump())
             yield _sse(artifact_event.model_dump())
 
             yield _sse(

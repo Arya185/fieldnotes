@@ -23,6 +23,7 @@ JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
 JobObjectExtendedLimitInformation = 9
 INFINITE = 0xFFFFFFFF
 WAIT_OBJECT_0 = 0x00000000
+ERROR_INVALID_PARAMETER = 87
 
 
 class IO_COUNTERS(ctypes.Structure):
@@ -117,25 +118,60 @@ class WindowsJobObject:
             self._handle = None
 
     def _apply_limits(self) -> None:
+        self._apply_required_limits()
+        self._apply_optional_limit(
+            JOB_OBJECT_LIMIT_PROCESS_TIME,
+            per_process_user_time_limit=self.policy.timeout_seconds * 10_000_000,
+        )
+        self._apply_optional_limit(
+            JOB_OBJECT_LIMIT_WORKINGSET,
+            minimum_working_set_size=0,
+            maximum_working_set_size=self.policy.memory_bytes,
+        )
+
+    def _apply_required_limits(self) -> None:
         limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
         limits.BasicLimitInformation.LimitFlags = (
             JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
             | JOB_OBJECT_LIMIT_ACTIVE_PROCESS
             | JOB_OBJECT_LIMIT_PROCESS_MEMORY
-            | JOB_OBJECT_LIMIT_PROCESS_TIME
-            | JOB_OBJECT_LIMIT_WORKINGSET
         )
         limits.BasicLimitInformation.ActiveProcessLimit = self.policy.max_processes
-        limits.BasicLimitInformation.PerProcessUserTimeLimit = self.policy.timeout_seconds * 10_000_000
         limits.ProcessMemoryLimit = self.policy.memory_bytes
-        limits.BasicLimitInformation.MinimumWorkingSetSize = 0
-        limits.BasicLimitInformation.MaximumWorkingSetSize = self.policy.memory_bytes
-        if not kernel32.SetInformationJobObject(
+        self._set_extended_limit_information(limits, ignore_invalid_parameter=False)
+
+    def _apply_optional_limit(
+        self,
+        limit_flag: int,
+        *,
+        per_process_user_time_limit: int | None = None,
+        minimum_working_set_size: int | None = None,
+        maximum_working_set_size: int | None = None,
+    ) -> None:
+        limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+        limits.BasicLimitInformation.LimitFlags = limit_flag
+        if per_process_user_time_limit is not None:
+            limits.BasicLimitInformation.PerProcessUserTimeLimit = per_process_user_time_limit
+        if minimum_working_set_size is not None:
+            limits.BasicLimitInformation.MinimumWorkingSetSize = minimum_working_set_size
+        if maximum_working_set_size is not None:
+            limits.BasicLimitInformation.MaximumWorkingSetSize = maximum_working_set_size
+        self._set_extended_limit_information(limits, ignore_invalid_parameter=True)
+
+    def _set_extended_limit_information(
+        self,
+        limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        *,
+        ignore_invalid_parameter: bool,
+    ) -> None:
+        if kernel32.SetInformationJobObject(
             self._handle,
             JobObjectExtendedLimitInformation,
             ctypes.byref(limits),
             ctypes.sizeof(limits),
         ):
-            raise WindowsSandboxLimitExceeded(
-                f"SetInformationJobObject failed: {ctypes.get_last_error()}"
-            )
+            return
+        error_code = ctypes.get_last_error()
+        if ignore_invalid_parameter and error_code == ERROR_INVALID_PARAMETER:
+            return
+        raise WindowsSandboxLimitExceeded(f"SetInformationJobObject failed: {error_code}")

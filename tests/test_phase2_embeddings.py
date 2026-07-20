@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-os.environ.setdefault("OPENAI_API_KEY", "test-key")
+os.environ.setdefault("FIELDNOTES_USE_FAKE_LLM", "1")
 
 from backend.db import BASE_SCHEMA_SQL, connect_sqlite, initialize_schema
 from backend.indexer.bm25 import BM25Provider

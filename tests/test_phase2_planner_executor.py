@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-os.environ.setdefault("OPENAI_API_KEY", "test-key")
+os.environ.setdefault("FIELDNOTES_USE_FAKE_LLM", "1")
 
 from backend.agent.executor import Executor
 from backend.agent.planner import ExecutionPlan, PlanStep, Planner, default_plan

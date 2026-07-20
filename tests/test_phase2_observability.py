@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-os.environ.setdefault("OPENAI_API_KEY", "test-key")
+os.environ.setdefault("FIELDNOTES_USE_FAKE_LLM", "1")
 
 from backend.indexer.bm25 import RetrievalChunk
 from backend.indexer.inspection import inspect_retrieval
