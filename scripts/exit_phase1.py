@@ -57,7 +57,7 @@ def main() -> None:
             check("[6/10] OK retrieval and citation integrity", bool(document_chips) and bool(code_chips))
 
             quiz_response = client.post(
-                "/quiz",
+                "/quiz/start",
                 json={"workspace_id": accepted["workspace_id"], "concept_ids": ["grounding"]},
             )
             quiz_events = parse_sse_payloads(quiz_response.text)

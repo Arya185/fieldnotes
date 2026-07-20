@@ -167,6 +167,16 @@ class ApiIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(trusted.status_code, 202)
 
+        trusted_dynamic_port = self.client.post(
+            "/index",
+            json={"folder_path": str(ws)},
+            headers={
+                "Origin": "http://127.0.0.1:5175",
+                "Referer": "http://127.0.0.1:5175/#workspace",
+            },
+        )
+        self.assertEqual(trusted_dynamic_port.status_code, 202)
+
         response = self.client.post(
             "/index",
             json={"folder_path": str(ws)},
