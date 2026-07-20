@@ -1,5 +1,7 @@
 # Fieldnotes
 
+[![Release Verification](https://github.com/Arya185/fieldnotes/actions/workflows/release.yml/badge.svg)](https://github.com/Arya185/fieldnotes/actions/workflows/release.yml)
+
 Student with folder full of course PDFs, slides, notes, and CSVs gets grounded answers and quizzes instead of pasting fragments into generic chatbot. Fieldnotes stays local-first, cites source passages for every claim, and keeps outputs traceable back to workspace files. Frontend exposes chat, notebook, quiz, source viewer, developer diagnostics.
 
 ## Demo
@@ -11,6 +13,34 @@ Student with folder full of course PDFs, slides, notes, and CSVs gets grounded a
 ![Quiz view screenshot placeholder](docs/images/screenshot-quiz.png)
 
 ![Developer diagnostics panel screenshot placeholder](docs/images/screenshot-developer-diagnostics.png)
+
+```mermaid
+flowchart TD
+    FE["React frontend<br/>workspace • chat • notebook • quiz • source • developer"] --> API["FastAPI routes<br/>backend/main.py"]
+    API --> IDX["/index<br/>run_indexing"]
+    API --> ASK["/ask<br/>services/ask.py"]
+    API --> QSTART["/quiz/start<br/>services/quiz.py"]
+    API --> QANSWER["/quiz/answer<br/>services/quiz.py"]
+    API --> NB["/notebook • /artifact • /source"]
+
+    ASK --> LLM["agent/llm.py<br/>OpenAI Responses API wrapper"]
+    QSTART --> LLM
+    LLM --> PLAN["agent/planner.py<br/>structured execution plan"]
+    LLM --> RETRIEVE["indexer/<br/>bm25 + embeddings + reranker"]
+    PLAN --> EXEC["agent/executor.py<br/>step orchestration"]
+    EXEC --> RETRIEVE
+    EXEC --> SANDBOX["sandbox/<br/>runner -> runtime -> containment"]
+    SANDBOX --> ARTIFACTS[".fieldnotes/artifacts/"]
+
+    IDX --> STORAGE["storage.py + db.py<br/>SQLite workspace store"]
+    RETRIEVE --> STORAGE
+    NB --> STORAGE
+    QANSWER --> STORAGE
+    ASK --> STORAGE
+    QSTART --> STORAGE
+
+    LLM --> OPENAI["OpenAI Responses API"]
+```
 
 ## Why Responses API
 
@@ -58,11 +88,20 @@ Vite dev server proxies API requests to `http://127.0.0.1:8000` by default. No `
 - Source reopening by persisted anchor
 - Release smoke verification and benchmark tooling
 
+## Roadmap / Beyond the Hackathon
+
+- Multi-user and hosted deployment path, with real authentication and tenant isolation, intentionally left out of scope for current single-user local release.
+- Broader document ingestion, especially richer spreadsheet, slide, and scanned-PDF handling beyond current parser set.
+- Optional hosted mode for users who want sync and remote access while keeping local-first desktop flow available.
+- Better long-course ergonomics: larger workspace navigation, deeper notebook organization, and richer study analytics over time.
+
 ## Security
 
 Generated analysis code runs in restricted sandbox. [backend/sandbox/runtime.py](backend/sandbox/runtime.py) parses scripts with Python AST, allowlists importable modules, blocks dangerous builtins and name references, and routes file access through workspace-jailing helpers plus artifact-only writes. [backend/sandbox/containment.py](backend/sandbox/containment.py) adds OS-level process containment with subprocess timeouts, stdout/stderr caps, and platform-specific process limits. Adversarial coverage lives in [tests/test_sandbox_security.py](tests/test_sandbox_security.py), including path traversal, absolute-path, symlink-escape, and Windows-specific containment checks.
 
 This is AST-based allowlist sandbox, not formally verified sandbox boundary. It mitigates escape techniques covered by [tests/test_sandbox_security.py](tests/test_sandbox_security.py), including path traversal, symlink escape, blocked dunder and builtin access, and resource exhaustion, but generated-code execution should still be treated as trusted-input-only feature rather than exposed to untrusted network input.
+
+Concrete blocked-script examples and exact validator errors live in [docs/sandbox-demo.md](docs/sandbox-demo.md).
 
 State-changing backend routes allow-list only trusted local frontend origins (`localhost` / `127.0.0.1` dev and container UI ports) and reject other browser `Origin` or `Referer` values; FastAPI CORS middleware still allows no browser origins by default. App still has no authentication and is designed as single-user local tool, not public deployment target.
 

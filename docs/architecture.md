@@ -36,6 +36,34 @@ GPT-5 is used through Responses API for reasoning tasks when `OPENAI_API_KEY` is
 
 # 2. High-level architecture
 
+```mermaid
+flowchart TD
+    FE["React frontend<br/>workspace • chat • notebook • quiz • source • developer"] --> API["FastAPI routes<br/>backend/main.py"]
+    API --> IDX["/index<br/>run_indexing"]
+    API --> ASK["/ask<br/>services/ask.py"]
+    API --> QSTART["/quiz/start<br/>services/quiz.py"]
+    API --> QANSWER["/quiz/answer<br/>services/quiz.py"]
+    API --> NB["/notebook • /artifact • /source"]
+
+    ASK --> LLM["agent/llm.py<br/>OpenAI Responses API wrapper"]
+    QSTART --> LLM
+    LLM --> PLAN["agent/planner.py<br/>structured execution plan"]
+    LLM --> RETRIEVE["indexer/<br/>bm25 + embeddings + reranker"]
+    PLAN --> EXEC["agent/executor.py<br/>step orchestration"]
+    EXEC --> RETRIEVE
+    EXEC --> SANDBOX["sandbox/<br/>runner -> runtime -> containment"]
+    SANDBOX --> ARTIFACTS[".fieldnotes/artifacts/"]
+
+    IDX --> STORAGE["storage.py + db.py<br/>SQLite workspace store"]
+    RETRIEVE --> STORAGE
+    NB --> STORAGE
+    QANSWER --> STORAGE
+    ASK --> STORAGE
+    QSTART --> STORAGE
+
+    LLM --> OPENAI["OpenAI Responses API"]
+```
+
 ```
 ┌────────────────────────────────────────────┐
 │               React Frontend               │

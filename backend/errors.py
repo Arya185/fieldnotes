@@ -52,6 +52,8 @@ def build_public_error(exc: Exception) -> PublicError:
         return PublicError("INVALID_REQUEST", "Requested source passage was not found.", True, 404)
     if "Unknown attempt_id" in text:
         return PublicError("INVALID_REQUEST", "Requested quiz attempt was not found.", True, 404)
+    if "Quiz attempt already answered" in text:
+        return PublicError("INVALID_REQUEST", "Quiz attempt has already been answered.", True, 400)
     if "sandbox" in text.lower() or "analysis completed locally" in text.lower():
         return PublicError("SANDBOX_ERROR", "Local analysis failed to complete safely.", True, 500)
     if "Analysis sandbox" in text:

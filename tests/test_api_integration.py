@@ -13,7 +13,7 @@ os.environ.setdefault("FIELDNOTES_USE_FAKE_LLM", "1")
 from fastapi.testclient import TestClient
 
 from backend.db import connect_sqlite
-from backend.main import app
+from backend.main import app, get_workspace_record
 from backend.indexer.workspace_manager import WorkspaceManager, workspace_manager
 from backend.indexer.bm25 import RetrievalChunk
 from backend.models import ConceptUpdate, QuizQuestionSchema, RouteIntentSchema
@@ -149,6 +149,12 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertEqual(response.json()["code"], "WORKSPACE_NOT_FOUND")
         self.assertIn("request_id", response.json())
         self.assertNotIn("detail", response.json())
+
+    def test_get_workspace_record_dependency_raises_404_for_missing_workspace(self) -> None:
+        with self.assertRaises(Exception) as context:
+            get_workspace_record("missing")
+        self.assertEqual(getattr(context.exception, "status_code", None), 404)
+        self.assertEqual(getattr(context.exception, "detail", None), "Unknown workspace_id")
 
     def test_index_allows_trusted_origin_and_rejects_foreign_origin(self) -> None:
         ws = self.base / "origin-block"

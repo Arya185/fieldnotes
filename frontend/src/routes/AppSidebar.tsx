@@ -1,6 +1,7 @@
 import type { DragEventHandler } from "react";
 
 import { LockBadge } from "../components/LockBadge";
+import { ModeBadge } from "../components/ModeBadge";
 import type { IndexHistoryEntry, StoredWorkspaceRecord } from "../lib/storage";
 
 interface AppSidebarProps {
@@ -73,7 +74,7 @@ export function AppSidebar({
         {!sidebarCollapsed && (
           <div className="sidebar-badges">
             <LockBadge />
-            {runtimeMode === "fake" && <span className="pill">Fake Mode (Deterministic)</span>}
+            <ModeBadge mode={runtimeMode} />
           </div>
         )}
       </section>

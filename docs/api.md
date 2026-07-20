@@ -37,6 +37,20 @@ Returns `202 Accepted`:
 {"status":"accepted","workspace_id":"...","run_id":"...","events":"/index/events/..."}
 ```
 
+Example:
+
+Request:
+
+```json
+{"folder_path":"/Users/student/course/demo_course"}
+```
+
+Response:
+
+```json
+{"status":"accepted","workspace_id":"86e6c3e1-cb6a-4cef-b8a0-695b325126bb","run_id":"run_123","events":"/index/events/run_123"}
+```
+
 ### `GET /index/events/{run_id}`
 
 Streams `file_started`, `file_parsed`, `index_complete`, then `brief_ready`. `file_parsed` has `file_id`, `display_name`, `parse_status` (`parsed`, `failed`, or `skipped`), and `parse_summary`.
@@ -56,6 +70,26 @@ Streams `intent`, zero or more `step` and `token` events, zero or more `artifact
 - `citations`: `chips` contain document anchors or artifact IDs.
 - `concepts`: updates have `concept_id`, `name`, and `state` (`touched` or `shaky`).
 
+Example request:
+
+```json
+{"workspace_id":"86e6c3e1-cb6a-4cef-b8a0-695b325126bb","question":"Why does Trial 4 look different?"}
+```
+
+Example SSE sequence:
+
+```text
+data: {"event":"intent","answer_id":"answer_123","intent":"analyze","targets":[],"connect":true}
+data: {"event":"step","answer_id":"answer_123","step":"retrieval","label":"searching selected workspace","status":"started","duration_ms":null,"file_id":null}
+data: {"event":"step","answer_id":"answer_123","step":"retrieval","label":"retrieved 5 passages","status":"ok","duration_ms":null,"file_id":null}
+data: {"event":"step","answer_id":"answer_123","step":"grounding","label":"grounding answer in retrieved passages","status":"started","duration_ms":null,"file_id":null}
+data: {"event":"token","answer_id":"answer_123","text":"Grounded answer for Why does Trial 4 look different?"}
+data: {"event":"artifact","answer_id":"answer_123","artifact_id":"artifact_123","kind":"explainer","title":"Answer: Why does Trial 4 look different?","url":"/artifact/artifact_123"}
+data: {"event":"citations","answer_id":"answer_123","chips":[{"chip_type":"document","label":"notes.txt (block1/b1)","anchor":"file_alpha#block1/b1","artifact_id":null}]}
+data: {"event":"concepts","answer_id":"answer_123","updates":[{"concept_id":"concept_grounding","name":"grounding","state":"touched"}]}
+data: {"event":"done","answer_id":"answer_123"}
+```
+
 ## Quiz
 
 ### `POST /quiz/start`
@@ -68,6 +102,18 @@ Both routes start one grounded question.
 
 `concept_ids` may be `null`. The stream emits `question` or `error`. A `question` includes `attempt_id`, `index`, `total`, four `options`, `source_label`, and `source_anchor`.
 
+Example request:
+
+```json
+{"workspace_id":"86e6c3e1-cb6a-4cef-b8a0-695b325126bb","concept_ids":["grounding"]}
+```
+
+Example SSE response:
+
+```text
+data: {"event":"question","attempt_id":"attempt_123","index":1,"total":1,"question":"Which file contains the grounded concept?","options":["alpha.txt","beta.txt","gamma.txt","delta.txt"],"source_label":"notes.txt block1/b1","source_anchor":"file_alpha#block1/b1"}
+```
+
 ### `POST /quiz/answer`
 
 ```json
@@ -76,11 +122,40 @@ Both routes start one grounded question.
 
 The stream emits `graded` then `quiz_done`, or `error`. `graded` includes the correctness result, explanation, citation chip, and concept update. `quiz_done` includes score, total, `artifact_id`, and refreshed starter cards.
 
+Example request:
+
+```json
+{"workspace_id":"86e6c3e1-cb6a-4cef-b8a0-695b325126bb","attempt_id":"attempt_123","chosen_index":0}
+```
+
+Example SSE sequence:
+
+```text
+data: {"event":"graded","attempt_id":"attempt_123","is_correct":true,"correct_index":0,"explanation":"Correct. The answer matches the grounded source passage.","chip":{"chip_type":"document","label":"notes.txt block1/b1","anchor":"file_alpha#block1/b1","artifact_id":null},"concept_update":{"concept_id":"concept_grounding","name":"grounding","state":"touched"}}
+data: {"event":"quiz_done","score":1,"total":1,"artifact_id":"artifact_quiz_123","refreshed_starters":[{"text":"Investigate anomalous damping pattern","file_path":"notes.txt","seed":"anomaly"},{"text":"Review grounded concept connections","file_path":"notes.txt","seed":"concept"},{"text":"Practice with quiz follow-up","file_path":"notes.txt","seed":"practice"}]}
+```
+
 ## Notebook and Sources
 
 ### `GET /notebook?workspace_id=...`
 
 Returns `{ "artifacts": [...] }`. Every card has `id`, `kind` (`chart`, `explainer`, `quiz_result`, or `script`), `title`, `created_at`, and optional `url`.
+
+Example response:
+
+```json
+{
+  "artifacts": [
+    {
+      "id": "artifact_123",
+      "kind": "explainer",
+      "title": "Answer: Why does Trial 4 look different?",
+      "created_at": "2026-07-20T21:30:58.154326+00:00",
+      "url": "/artifact/artifact_123"
+    }
+  ]
+}
+```
 
 ### `GET /artifact/{artifact_id}?workspace_id=...`
 
@@ -92,6 +167,16 @@ Returns the persisted chunk for a citation anchor:
 
 ```json
 {"text":"...","label":"notes.md paragraph:1","file_path":"notes.md"}
+```
+
+Example response:
+
+```json
+{
+  "text": "Trial 4 damping explanation",
+  "label": "notes.txt block1/b1",
+  "file_path": "notes.txt"
+}
 ```
 
 ## Errors

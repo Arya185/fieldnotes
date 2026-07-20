@@ -610,6 +610,8 @@ def record_quiz_answer(
     attempt = load_quiz_attempt(connection, attempt_id)
     if attempt is None:
         return None
+    if attempt["chosen_index"] is not None:
+        raise ValueError(f"Quiz attempt already answered: {attempt_id}")
 
     is_correct = int(chosen_index == int(attempt["correct_index"]))
     connection.execute(

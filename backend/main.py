@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
@@ -26,7 +26,7 @@ from backend.db import connect_sqlite, latest_storage_warning_message
 from backend.errors import error_response, request_id_for
 from backend.indexer.events import run_manager
 from backend.indexer.pipeline import run_indexing
-from backend.indexer.workspace_manager import workspace_manager
+from backend.indexer.workspace_manager import WorkspaceRecord, workspace_manager
 from backend.models import (
     AskRequest,
     IndexRequest,
@@ -189,13 +189,16 @@ async def post_quiz_answer(request: QuizAnswerRequest, http_request: Request) ->
     )
 
 
-@app.get("/notebook")
-async def get_notebook(workspace_id: str) -> NotebookResponse:
-    """Return persisted notebook artifact cards for one workspace."""
-
+def get_workspace_record(workspace_id: str) -> WorkspaceRecord:
     workspace_record = workspace_manager.get(workspace_id)
     if workspace_record is None:
         raise HTTPException(status_code=404, detail="Unknown workspace_id")
+    return workspace_record
+
+
+@app.get("/notebook")
+async def get_notebook(workspace_record: WorkspaceRecord = Depends(get_workspace_record)) -> NotebookResponse:
+    """Return persisted notebook artifact cards for one workspace."""
 
     connection = connect_sqlite(workspace_record.db_path)
     try:
@@ -206,12 +209,8 @@ async def get_notebook(workspace_id: str) -> NotebookResponse:
 
 
 @app.get("/artifact/{artifact_id}")
-async def get_artifact(artifact_id: str, workspace_id: str):
+async def get_artifact(artifact_id: str, workspace_record: WorkspaceRecord = Depends(get_workspace_record)):
     """Return one persisted artifact payload."""
-
-    workspace_record = workspace_manager.get(workspace_id)
-    if workspace_record is None:
-        raise HTTPException(status_code=404, detail="Unknown workspace_id")
 
     connection = connect_sqlite(workspace_record.db_path)
     try:
@@ -234,12 +233,12 @@ async def get_artifact(artifact_id: str, workspace_id: str):
 
 
 @app.get("/source/{file_id}/{locator:path}")
-async def get_source(file_id: str, locator: str, workspace_id: str) -> SourceResponse:
+async def get_source(
+    file_id: str,
+    locator: str,
+    workspace_record: WorkspaceRecord = Depends(get_workspace_record),
+) -> SourceResponse:
     """Return persisted source text for a citation locator."""
-
-    workspace_record = workspace_manager.get(workspace_id)
-    if workspace_record is None:
-        raise HTTPException(status_code=404, detail="Unknown workspace_id")
 
     connection = connect_sqlite(workspace_record.db_path)
     try:
