@@ -11,7 +11,6 @@ import type {
   RouteKey,
   SourceAccordionState,
   SourceNavItem,
-  SourceViewState,
 } from "./types";
 import { copyText } from "./utils";
 

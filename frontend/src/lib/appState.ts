@@ -1,20 +1,9 @@
 import type { RefObject } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { fetchArtifact } from "./api";
 import { useAskState } from "./appState/askState";
-import type {
-  ArtifactPreview,
-  ChatMessage,
-  ContextTab,
-  NoteOverrides,
-  QuizReviewItem,
-  QuizState,
-  RouteKey,
-  SourceAccordionState,
-  SourceNavItem,
-  SourceViewState,
-} from "./appState/types";
+import type { ContextTab, RouteKey } from "./appState/types";
 import { getInitialRoute, routes, formatDateTime, formatRelative, copyText } from "./appState/utils";
 import { useQuizState } from "./appState/quizState";
 import { useWorkspaceState } from "./appState/workspaceState";
