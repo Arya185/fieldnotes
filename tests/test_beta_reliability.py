@@ -90,6 +90,75 @@ class BetaReliabilityTests(unittest.TestCase):
         self.assertEqual(captured["policy"].max_processes, 1)
         self.assertEqual(captured["policy"].memory_bytes, sandbox_runner.DEFAULT_MEMORY_BYTES)
 
+    def test_sandbox_propagates_thread_limit_environment(self) -> None:
+        artifacts_dir = self.base / "artifacts"
+        captured: dict[str, object] = {}
+
+        def fake_runner(*, command, cwd, env, policy, preexec_fn):
+            captured["env"] = env
+            result_path = Path(env["FIELDNOTES_RESULT_PATH"])
+            result_path.write_text('{"summary":"ok","metrics":{}}', encoding="utf-8")
+            return type("Completed", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        with (
+            patch.object(sandbox_runner, "resource", None),
+            patch.object(sandbox_runner, "run_platform_sandbox", fake_runner),
+            patch.dict(
+                os.environ,
+                {
+                    "OPENBLAS_NUM_THREADS": "1",
+                    "OMP_NUM_THREADS": "1",
+                    "MKL_NUM_THREADS": "1",
+                    "NUMEXPR_NUM_THREADS": "1",
+                },
+                clear=False,
+            ),
+        ):
+            sandbox_runner.run_generated_analysis(
+                workspace_root=self.base,
+                artifacts_dir=artifacts_dir,
+                answer_id="thread_limit_case",
+                script_source="write_result({'summary': 'ok', 'metrics': {}})\n",
+            )
+
+        sandbox_env = captured["env"]
+        self.assertEqual(sandbox_env["OPENBLAS_NUM_THREADS"], "1")
+        self.assertEqual(sandbox_env["OMP_NUM_THREADS"], "1")
+        self.assertEqual(sandbox_env["MKL_NUM_THREADS"], "1")
+        self.assertEqual(sandbox_env["NUMEXPR_NUM_THREADS"], "1")
+
+    def test_startup_sandbox_validation_uses_same_thread_limit_environment(self) -> None:
+        captured: dict[str, object] = {}
+
+        def fake_run(command, *, cwd, env, capture_output, text, timeout, check):
+            captured["command"] = command
+            captured["cwd"] = cwd
+            captured["env"] = env
+            result_path = Path(env["FIELDNOTES_RESULT_PATH"])
+            result_path.write_text('{"ok": true}', encoding="utf-8")
+            return type("Completed", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "OPENBLAS_NUM_THREADS": "1",
+                    "OMP_NUM_THREADS": "1",
+                    "MKL_NUM_THREADS": "1",
+                    "NUMEXPR_NUM_THREADS": "1",
+                },
+                clear=False,
+            ),
+            patch("backend.config.subprocess.run", side_effect=fake_run),
+        ):
+            self.assertEqual(backend_config._validate_sandbox_runtime(), "ok")
+
+        sandbox_env = captured["env"]
+        self.assertEqual(sandbox_env["OPENBLAS_NUM_THREADS"], "1")
+        self.assertEqual(sandbox_env["OMP_NUM_THREADS"], "1")
+        self.assertEqual(sandbox_env["MKL_NUM_THREADS"], "1")
+        self.assertEqual(sandbox_env["NUMEXPR_NUM_THREADS"], "1")
+
     def test_windows_limit_failure_surfaces_clean_runtime_error(self) -> None:
         artifacts_dir = self.base / "artifacts"
 

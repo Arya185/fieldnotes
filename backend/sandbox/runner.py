@@ -14,6 +14,7 @@ from backend.sandbox.containment import (
     SandboxPolicy,
     run_platform_sandbox,
 )
+from backend.sandbox.environment import build_sandbox_environment
 from backend.sandbox.runtime import validate_script_source
 from backend.telemetry.tracing import metrics_registry, trace_collector
 
@@ -62,17 +63,13 @@ def run_generated_analysis(
             _cleanup_failed_outputs(script_path, result_path, chart_path)
             raise
 
-        environment = {
-            "PYTHONUNBUFFERED": "1",
-            "PYTHONNOUSERSITE": "1",
-            "FIELDNOTES_WORKSPACE_ROOT": str(workspace_root.resolve()),
-            "FIELDNOTES_ARTIFACTS_DIR": str(artifacts_dir.resolve()),
-            "FIELDNOTES_SCRIPT_PATH": str(script_path.resolve()),
-            "FIELDNOTES_RESULT_PATH": str(result_path),
-            "FIELDNOTES_CHART_PATH": str(chart_path),
-            "MPLBACKEND": "Agg",
-            "PATH": os.environ.get("PATH", ""),
-        }
+        environment = build_sandbox_environment(
+            workspace_root=workspace_root,
+            artifacts_dir=artifacts_dir,
+            script_path=script_path,
+            result_path=result_path,
+            chart_path=chart_path,
+        )
         policy = SandboxPolicy(
             timeout_seconds=timeout_seconds,
             memory_bytes=DEFAULT_MEMORY_BYTES,

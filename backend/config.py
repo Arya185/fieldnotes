@@ -12,6 +12,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from backend.sandbox.environment import build_sandbox_environment
+
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 BACKEND_DIR = ROOT_DIR / "backend"
@@ -324,17 +326,13 @@ def _validate_sandbox_runtime() -> str:
         completed = subprocess.run(
             [sys.executable, "-I", str(ROOT_DIR / "backend" / "sandbox" / "runtime_runner.py")],
             cwd=workspace_root,
-            env={
-                "PYTHONUNBUFFERED": "1",
-                "PYTHONNOUSERSITE": "1",
-                "FIELDNOTES_WORKSPACE_ROOT": str(workspace_root),
-                "FIELDNOTES_ARTIFACTS_DIR": str(artifacts_dir),
-                "FIELDNOTES_SCRIPT_PATH": str(script),
-                "FIELDNOTES_RESULT_PATH": str(result_path),
-                "FIELDNOTES_CHART_PATH": str(artifacts_dir / "chart.png"),
-                "MPLBACKEND": "Agg",
-                "PATH": os.environ.get("PATH", ""),
-            },
+            env=build_sandbox_environment(
+                workspace_root=workspace_root,
+                artifacts_dir=artifacts_dir,
+                script_path=script,
+                result_path=result_path,
+                chart_path=artifacts_dir / "chart.png",
+            ),
             capture_output=True,
             text=True,
             timeout=10,
