@@ -76,7 +76,7 @@ Start with [docs/beta-onboarding.md](/Users/aryapatel/arya/Programming/All Hacka
 Start backend:
 
 ```bash
-python -m uvicorn backend.main:app
+python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
 ```
 
 Start frontend dev server:
