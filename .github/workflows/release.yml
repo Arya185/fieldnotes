@@ -48,7 +48,17 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: |
           python -m pip install pip-audit
-          python -m pip_audit --local
+          # Ignore Starlette advisories for code paths Fieldnotes does not use:
+          # - PYSEC-2026-248 / 249: request.form() urlencoded parsing limits
+          # - PYSEC-2026-2280: HTTPEndpoint method dispatch
+          # - PYSEC-2026-2281: StaticFiles UNC-path SSRF on Windows
+          # - PYSEC-2026-161: reconstructed URL path confusion; app has no auth/redirect logic based on request.url
+          python -m pip_audit --local \
+            --ignore-vuln PYSEC-2026-161 \
+            --ignore-vuln PYSEC-2026-248 \
+            --ignore-vuln PYSEC-2026-249 \
+            --ignore-vuln PYSEC-2026-2280 \
+            --ignore-vuln PYSEC-2026-2281
 
       - name: Frontend dependency audit
         if: matrix.os == 'ubuntu-latest'
