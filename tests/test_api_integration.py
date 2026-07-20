@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -66,15 +67,14 @@ class FakeLLMClient:
                 "title": "Trial analysis",
                 "needs_chart": True,
                 "script": (
-                    "import base64, json, os\n"
-                    "from pathlib import Path\n"
+                    "import base64\n"
                     "import pandas as pd\n"
                     f"frame = pd.read_csv({file_path!r})\n"
                     "numeric = frame.select_dtypes(include=['number'])\n"
                     "summary = {'rows': int(len(frame)), 'columns': list(frame.columns)}\n"
                     "png_bytes = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Z0XQAAAAASUVORK5CYII=')\n"
-                    "Path(os.environ['FIELDNOTES_CHART_PATH']).write_bytes(png_bytes)\n"
-                    "Path(os.environ['FIELDNOTES_RESULT_PATH']).write_text(json.dumps({'summary': 'analysis complete', 'metrics': summary}), encoding='utf-8')\n"
+                    "write_chart_bytes(png_bytes)\n"
+                    "write_result({'summary': 'analysis complete', 'metrics': summary})\n"
                     "print('analysis complete')\n"
                 ),
             },
@@ -118,6 +118,34 @@ class ApiIntegrationTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
+
+    def test_lifespan_initializes_runtime_and_preserves_health_contract(self) -> None:
+        with patch.dict(os.environ, {"FIELDNOTES_USE_FAKE_LLM": "1"}):
+            with TestClient(app) as client:
+                response = client.get("/health")
+                self.assertEqual(
+                    response.json(),
+                    {
+                        "status": "ok",
+                        "version": "1.0.0-beta.1",
+                        "mode": "fake",
+                        "startup": "healthy",
+                    },
+                )
+                self.assertEqual(app.state.release_metadata["version"], "1.0.0-beta.1")
+
+    def test_notebook_invalid_workspace_returns_stable_rest_error(self) -> None:
+        response = self.client.get("/notebook", params={"workspace_id": "missing"})
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json()["code"], "WORKSPACE_NOT_FOUND")
+        self.assertIn("request_id", response.json())
+        self.assertNotIn("detail", response.json())
+
+    def test_health_includes_registry_warning_when_recovery_occurred(self) -> None:
+        with patch.object(workspace_manager, "last_recovery_warning", return_value="Registry file was corrupted and was recreated."):
+            response = self.client.get("/health")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["registry_warning"], "Registry file was corrupted and was recreated.")
 
     def test_concurrent_indexing_runs_and_run_isolation(self) -> None:
         ws1 = self.base / "ws1"
@@ -422,6 +450,117 @@ class ApiIntegrationTests(unittest.TestCase):
             answer,
             "I couldn't find enough supporting information in the indexed workspace.",
         )
+
+    def test_sse_invalid_workspace_returns_stable_error(self) -> None:
+        payloads = parse_sse_payloads(
+            self.client.post("/ask", json={"workspace_id": "missing", "question": "hello"}).text
+        )
+        error = payloads[-1]
+        self.assertEqual(error["event"], "error")
+        self.assertEqual(error["code"], "WORKSPACE_NOT_FOUND")
+        self.assertEqual(error["message"], "Selected workspace was not found.")
+        self.assertIn("request_id", error)
+        self.assertNotIn("Traceback", json.dumps(error))
+
+    def test_sse_sandbox_failure_is_stable_and_logs_diagnostics(self) -> None:
+        class BrokenScriptLLM(FakeLLMClient):
+            def generate_analysis_script(self, *, question: str, retrieval_results, dataset_profiles_json: str):
+                return type(
+                    "AnalysisScript",
+                    (),
+                    {
+                        "target_file_path": "pendulum.csv",
+                        "title": "Broken",
+                        "needs_chart": False,
+                        "script": "write_result('bad payload')\n",
+                    },
+                )()
+
+        ws = self.base / "sandbox_fail"
+        build_csv_workspace(ws)
+        index = self.client.post("/index", json={"folder_path": str(ws)}).json()
+        self.client.get(index["events"])
+        with (
+            patch("backend.main.llm_client", new=BrokenScriptLLM()),
+            self.assertLogs("fieldnotes.api", level="ERROR") as logs,
+        ):
+            payloads = parse_sse_payloads(
+                self.client.post(
+                    "/ask",
+                    json={"workspace_id": index["workspace_id"], "question": "Why trial 4?"},
+                ).text
+            )
+        error = payloads[-1]
+        self.assertEqual(error["code"], "SANDBOX_ERROR")
+        self.assertNotIn(str(ws), error["message"])
+        self.assertNotIn("Traceback", json.dumps(error))
+        self.assertTrue(any("Result payload must be dictionary" in line for line in logs.output))
+
+    def test_sse_live_api_failure_is_stable(self) -> None:
+        class FailingLLM(FakeLLMClient):
+            def classify_intent(self, question: str) -> RouteIntentSchema:
+                raise RuntimeError("OpenAI Responses API failed for gpt-5 at /Users/secret")
+
+        ws = self.base / "live_api_fail"
+        build_workspace(ws, "alpha.txt", "alpha")
+        index = self.client.post("/index", json={"folder_path": str(ws)}).json()
+        self.client.get(index["events"])
+        with patch("backend.main.llm_client", new=FailingLLM()):
+            payloads = parse_sse_payloads(
+                self.client.post("/ask", json={"workspace_id": index["workspace_id"], "question": "hello"}).text
+            )
+        error = payloads[-1]
+        self.assertEqual(error["code"], "LIVE_API_UNAVAILABLE")
+        self.assertNotIn("gpt-5", error["message"])
+        self.assertNotIn("/Users/secret", error["message"])
+
+    def test_sse_timeout_failure_is_stable(self) -> None:
+        class TimeoutLLM(FakeLLMClient):
+            def classify_intent(self, question: str) -> RouteIntentSchema:
+                raise TimeoutError("timed out at /Users/private")
+
+        ws = self.base / "timeout_fail"
+        build_workspace(ws, "alpha.txt", "alpha")
+        index = self.client.post("/index", json={"folder_path": str(ws)}).json()
+        self.client.get(index["events"])
+        with patch("backend.main.llm_client", new=TimeoutLLM()):
+            payloads = parse_sse_payloads(
+                self.client.post("/ask", json={"workspace_id": index["workspace_id"], "question": "hello"}).text
+            )
+        error = payloads[-1]
+        self.assertEqual(error["code"], "TIMEOUT")
+        self.assertNotIn("/Users/private", error["message"])
+
+    def test_rest_sqlite_failure_is_stable_and_logs_diagnostics(self) -> None:
+        with (
+            patch("backend.main.connect_sqlite", side_effect=sqlite3.DatabaseError("db broke at /Users/private/work.db")),
+            patch.object(workspace_manager, "get", return_value=type("Record", (), {"db_path": Path("x"), "artifacts_dir": Path("x"), "root": Path("x")})()),
+            self.assertLogs("fieldnotes.api", level="ERROR") as logs,
+        ):
+            response = self.client.get("/notebook", params={"workspace_id": "ws"})
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.json()["code"], "DATABASE_ERROR")
+        self.assertNotIn("/Users/private", response.text)
+        self.assertTrue(any("DatabaseError" in line for line in logs.output))
+
+    def test_sse_unexpected_exception_is_stable(self) -> None:
+        class ExplodingLLM(FakeLLMClient):
+            def classify_intent(self, question: str) -> RouteIntentSchema:
+                raise RuntimeError("Traceback: boom at /Users/private/project")
+
+        ws = self.base / "explode"
+        build_workspace(ws, "alpha.txt", "alpha")
+        index = self.client.post("/index", json={"folder_path": str(ws)}).json()
+        self.client.get(index["events"])
+        with patch("backend.main.llm_client", new=ExplodingLLM()):
+            payloads = parse_sse_payloads(
+                self.client.post("/ask", json={"workspace_id": index["workspace_id"], "question": "hello"}).text
+            )
+        error = payloads[-1]
+        self.assertEqual(error["code"], "INTERNAL_ERROR")
+        self.assertNotIn("Traceback", json.dumps(error))
+        self.assertNotIn("/Users/private/project", json.dumps(error))
 
 
 if __name__ == "__main__":

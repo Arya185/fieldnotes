@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
-import ast
 import json
 import os
-import subprocess
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from backend.sandbox.containment import (
+    SandboxLimitExceeded,
+    SandboxPolicy,
+    run_platform_sandbox,
+)
+from backend.sandbox.runtime import validate_script_source
 from backend.telemetry.tracing import metrics_registry, trace_collector
 
 try:  # pragma: no cover - platform-dependent import
@@ -21,40 +25,8 @@ except ImportError:  # pragma: no cover - Windows
 
 DEFAULT_TIMEOUT_SECONDS = 15
 DEFAULT_MEMORY_BYTES = 512 * 1024 * 1024
-ALLOWED_IMPORT_MODULES = {
-    "base64",
-    "collections",
-    "json",
-    "math",
-    "matplotlib",
-    "numpy",
-    "os",
-    "pandas",
-    "pathlib",
-    "scipy",
-    "statistics",
-    "time",
-}
-DANGEROUS_CALL_NAMES = {"eval", "exec", "compile", "__import__", "input", "open"}
-DANGEROUS_ATTRIBUTE_CALLS = {
-    ("os", "system"),
-    ("os", "popen"),
-    ("os", "spawnl"),
-    ("os", "spawnlp"),
-    ("os", "spawnv"),
-    ("os", "spawnvp"),
-    ("os", "execv"),
-    ("os", "execve"),
-    ("os", "execl"),
-    ("os", "execlp"),
-    ("os", "fork"),
-    ("subprocess", "run"),
-    ("subprocess", "Popen"),
-    ("subprocess", "call"),
-    ("subprocess", "check_call"),
-    ("subprocess", "check_output"),
-    ("socket", "socket"),
-}
+DEFAULT_STDIO_BYTES = 1024 * 1024
+RUNTIME_RUNNER_PATH = Path(__file__).with_name("runtime_runner.py").resolve()
 
 
 @dataclass(frozen=True)
@@ -85,7 +57,7 @@ def run_generated_analysis(
         chart_path = artifacts_dir / f"{answer_id}_chart.png"
         script_path.write_text(script_source, encoding="utf-8")
         try:
-            _validate_script_source(script_source)
+            validate_script_source(script_source)
         except Exception:
             _cleanup_failed_outputs(script_path, result_path, chart_path)
             raise
@@ -93,30 +65,32 @@ def run_generated_analysis(
         environment = {
             "PYTHONUNBUFFERED": "1",
             "PYTHONNOUSERSITE": "1",
+            "FIELDNOTES_WORKSPACE_ROOT": str(workspace_root.resolve()),
+            "FIELDNOTES_ARTIFACTS_DIR": str(artifacts_dir.resolve()),
+            "FIELDNOTES_SCRIPT_PATH": str(script_path.resolve()),
             "FIELDNOTES_RESULT_PATH": str(result_path),
             "FIELDNOTES_CHART_PATH": str(chart_path),
             "MPLBACKEND": "Agg",
             "PATH": os.environ.get("PATH", ""),
         }
+        policy = SandboxPolicy(
+            timeout_seconds=timeout_seconds,
+            memory_bytes=DEFAULT_MEMORY_BYTES,
+            max_processes=1,
+            max_stdio_bytes=DEFAULT_STDIO_BYTES,
+        )
 
         try:
-            subprocess_kwargs = {
-                "cwd": workspace_root,
-                "env": environment,
-                "capture_output": True,
-                "text": True,
-                "timeout": timeout_seconds,
-                "check": False,
-            }
-            if resource is not None and os.name != "nt":
-                subprocess_kwargs["preexec_fn"] = _limit_resources
-            completed = subprocess.run(
-                [sys.executable, "-I", str(script_path)],
-                **subprocess_kwargs,
+            completed = run_platform_sandbox(
+                command=[sys.executable, "-I", str(RUNTIME_RUNNER_PATH)],
+                cwd=workspace_root,
+                env=environment,
+                policy=policy,
+                preexec_fn=(lambda: _limit_resources(policy)) if resource is not None and os.name != "nt" else None,
             )
-        except subprocess.TimeoutExpired as exc:
+        except SandboxLimitExceeded as exc:
             _cleanup_failed_outputs(script_path, result_path, chart_path)
-            raise RuntimeError(f"Analysis sandbox timed out after {timeout_seconds}s") from exc
+            raise RuntimeError(str(exc)) from exc
         metrics_registry.record("sandbox_execution_time_ms", (time.perf_counter() - started) * 1000)
         if completed.returncode != 0:
             _cleanup_failed_outputs(script_path, result_path, chart_path)
@@ -143,45 +117,21 @@ def run_generated_analysis(
         )
 
 
-def _validate_script_source(script_source: str) -> None:
-    try:
-        module = ast.parse(script_source, mode="exec")
-    except SyntaxError as exc:
-        raise RuntimeError(f"Analysis script is not valid Python: {exc.msg}") from exc
-
-    for node in ast.walk(module):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                top_level = alias.name.split(".", 1)[0]
-                if top_level not in ALLOWED_IMPORT_MODULES:
-                    raise RuntimeError(f"Disallowed import in analysis script: {alias.name}")
-        elif isinstance(node, ast.ImportFrom):
-            if node.module is None:
-                raise RuntimeError("Relative imports are not allowed in analysis script")
-            top_level = node.module.split(".", 1)[0]
-            if top_level not in ALLOWED_IMPORT_MODULES:
-                raise RuntimeError(f"Disallowed import in analysis script: {node.module}")
-        elif isinstance(node, ast.Call):
-            if isinstance(node.func, ast.Name) and node.func.id in DANGEROUS_CALL_NAMES:
-                raise RuntimeError(f"Disallowed call in analysis script: {node.func.id}")
-            if isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
-                pair = (node.func.value.id, node.func.attr)
-                if pair in DANGEROUS_ATTRIBUTE_CALLS:
-                    raise RuntimeError(
-                        f"Disallowed call in analysis script: {node.func.value.id}.{node.func.attr}"
-                    )
-
-
 def _cleanup_failed_outputs(*paths: Path) -> None:
     for path in paths:
         path.unlink(missing_ok=True)
 
 
-def _limit_resources() -> None:
+def _limit_resources(policy: SandboxPolicy) -> None:
     if resource is None:
         return
     try:
-        resource.setrlimit(resource.RLIMIT_CPU, (DEFAULT_TIMEOUT_SECONDS, DEFAULT_TIMEOUT_SECONDS))
-        resource.setrlimit(resource.RLIMIT_AS, (DEFAULT_MEMORY_BYTES, DEFAULT_MEMORY_BYTES))
+        cpu_budget = max(policy.timeout_seconds + 1, 2)
+        resource.setrlimit(resource.RLIMIT_CPU, (cpu_budget, cpu_budget))
+        resource.setrlimit(resource.RLIMIT_AS, (policy.memory_bytes, policy.memory_bytes))
+        if hasattr(resource, "RLIMIT_NPROC"):
+            resource.setrlimit(resource.RLIMIT_NPROC, (policy.max_processes, policy.max_processes))
+        if hasattr(resource, "RLIMIT_NOFILE"):
+            resource.setrlimit(resource.RLIMIT_NOFILE, (32, 32))
     except Exception:
         return

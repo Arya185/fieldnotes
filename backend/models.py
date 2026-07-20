@@ -129,8 +129,10 @@ class ConceptsEvent(StrictModel):
 class ErrorEvent(StrictModel):
     event: Literal["error"]
     answer_id: str
+    code: str
     message: str
     recoverable: bool
+    request_id: str | None = None
 
 
 class DoneEvent(StrictModel):

@@ -58,6 +58,24 @@ FIELDNOTES_USE_FAKE_LLM=1
 
 This bypasses live OpenAI calls for CI, release smoke, and offline local verification. Use live mode with `OPENAI_API_KEY` for beta feedback on retrieval and answer quality.
 
+Optional live production validation:
+
+```bash
+python scripts/exit_phase0.py
+python -m unittest tests.test_live_responses_api_integration
+```
+
+Without `OPENAI_API_KEY`, live integration test is skipped and Phase 0 reports `LIVE API ... SKIPPED`.
+
+GitHub Actions mirrors this split:
+
+- fake-mode workflow runs on every push and pull request without secrets
+- optional live OpenAI job runs only when repository secret `OPENAI_API_KEY` is available
+- live job uses configured `OPENAI_MODEL` when set, otherwise normal application default applies
+- expected runtime: usually under 1 minute
+- expected cost: minimal, one tiny probe plus one tiny integration request
+- optional by design so normal CI stays deterministic and secret-free
+
 No manual `export` is required for normal local development. Backend loads project-root `.env` automatically.
 
 Copy example config if you want one place to record settings:

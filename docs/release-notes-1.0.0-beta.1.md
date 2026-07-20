@@ -10,6 +10,7 @@ Date: July 18, 2026
 - Notebook artifact persistence
 - Source reopening by anchor
 - Retrieval, planning, execution, observability tooling
+- Portable Phase 0 and Phase 1 verification scripts
 
 ## Known limitations
 
@@ -17,8 +18,9 @@ Date: July 18, 2026
 - Frontend is desktop-first
 - Release verification uses internal fake LLM mode for offline smoke stability
 - No desktop packaging bundle yet
-- Windows sandbox does not apply Unix `resource` limits
+- Windows sandbox now uses native Job Object containment for CPU time, memory, process count, and cleanup
 - `npm install` currently reports audit findings that were not force-upgraded during beta because behavior-preserving fix path still needs review
+- Release verification requires npm to be discoverable by the Python process that launches it
 
 ## Future roadmap
 

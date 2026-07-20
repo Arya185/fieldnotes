@@ -13,11 +13,15 @@
 - `frontend/vite.config.ts`: local dev proxy to backend
 - `scripts/run_benchmarks.py`: benchmark runner
 - `scripts/release_check.py`: RC verification
+- `scripts/exit_phase0.py`: portable configuration/startup verifier
+- `scripts/exit_phase1.py`: end-to-end local workflow verifier
 
 ## Local checks
 
 ```bash
 python -m unittest discover -s tests
+python scripts/exit_phase0.py
+python scripts/exit_phase1.py
 cd frontend && npm test
 cd frontend && npm run build
 python scripts/run_benchmarks.py
@@ -34,7 +38,7 @@ python scripts/release_check.py
 
 - `run.sh` is Unix-only convenience wrapper.
 - CI release workflow runs on Ubuntu, macOS, and Windows.
-- Sandbox resource limits are reduced on Windows because `resource` is unavailable there.
+- Sandbox resource limits use native Windows Job Objects on Windows and `resource.setrlimit` on Unix platforms.
 
 ## Development workflow
 

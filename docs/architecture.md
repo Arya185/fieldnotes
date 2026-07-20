@@ -19,7 +19,7 @@ The system is organized into four major layers:
 1. User Interface
 2. Application Backend
 3. Local Storage & Retrieval
-4. GPT-5.6 Reasoning
+4. Responses API reasoning
 
 Each layer has a single responsibility.
 
@@ -61,7 +61,7 @@ GPT-5 is used through Responses API for reasoning tasks. Internal release smoke 
         │
         ▼
 
-     GPT-5.6
+     OpenAI Responses API
  (Reasoning only)
 ```
 
@@ -88,7 +88,7 @@ The frontend never:
 
 - parses files
 - accesses SQLite
-- communicates directly with GPT-5.6
+- communicates directly with OpenAI
 
 In local development, Vite proxies frontend API requests to the backend on `127.0.0.1:8000`.
 
@@ -105,7 +105,7 @@ Responsibilities include:
 - orchestration
 - notebook persistence
 - sandbox execution
-- communication with GPT-5.6
+- communication with the configured OpenAI Responses model
 
 The backend is the application's single source of truth.
 
@@ -135,6 +135,8 @@ Responsibilities include:
 - producing plots
 - capturing stdout/stderr
 - saving generated artifacts
+- enforcing workspace-root path jail for all generated file access
+- restricting writes to `.fieldnotes/artifacts/` through sandbox helpers
 
 Execution occurs entirely on the student's machine.
 
@@ -154,6 +156,9 @@ Persistent storage contains:
 The storage schema is defined exclusively in `schemas.md`.
 
 Runtime schema initialization includes SQLite migrations and schema-version tracking; see `schemas.md` for contract note and `backend/db.py` for shipped bootstrap behavior.
+
+Public API errors use stable user-safe codes and messages. Internal exception types, tracebacks, filesystem paths, and provider details stay in backend logs rather than client payloads.
+Workspace database opens also run SQLite integrity validation. When corruption is detected, runtime attempts WAL recovery first, then quarantines damaged database files, creates a replacement database, rebuilds from workspace source files when possible, and restores file-backed artifact metadata from the artifacts directory.
 
 ---
 
@@ -220,7 +225,7 @@ Local retrieval and/or analysis
 
 ↓
 
-GPT-5.6 reasoning
+Responses API reasoning
 
 ↓
 
@@ -254,10 +259,10 @@ Local Retrieval         Python Sandbox
 
                 │
                 ▼
-             GPT-5.6
+             OpenAI Responses API
 ```
 
-The backend is the only component permitted to communicate with GPT-5.6.
+The backend is the only component permitted to communicate with OpenAI. Live mode defaults to `gpt-5`; fake mode uses deterministic local generation and makes no OpenAI call.
 
 ---
 
@@ -276,7 +281,7 @@ The following remain on-device:
 - concept log
 - quiz history
 
-Only the task-scoped information defined in `dataflow.md` and `rule.md` is sent to GPT-5.6.
+Only the task-scoped information defined in `dataflow.md` and `rule.md` is sent to the configured Responses model.
 
 This boundary is the primary privacy guarantee of the system.
 

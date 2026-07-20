@@ -1,1 +1,1 @@
-"""Indexing package placeholder."""
+"""Indexing pipeline package."""

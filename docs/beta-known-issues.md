@@ -10,16 +10,6 @@ None confirmed.
 
 ## High
 
-### H-1. Windows sandbox runs without Unix resource limits
-
-- Category: reliability
-- Reproducibility: always on Windows
-- Impact: local analysis sandbox does not apply Unix `resource` CPU or memory caps on Windows
-- Workaround: use macOS or Linux for strongest sandbox isolation; on Windows, avoid untrusted workspaces during beta
-- Planned fix: evaluate Windows-specific sandbox limits before `v1.0.0`
-- Target release: `v1.0.0`
-- Blocking status: review before stable release because it affects runtime containment expectations
-
 ## Medium
 
 ### M-1. No packaged desktop installer

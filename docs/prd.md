@@ -1,7 +1,6 @@
 # Fieldnotes — Product Requirements Document
 
-**Version:** 1.0 · **Date:** July 17, 2026 · **Status:** Draft for OpenAI Build Week (Education track)
-**Deadline:** Submission due Tuesday, July 21, 2026 at 5:00 PM PT
+**Version:** 1.0.0-beta.1 · **Status:** Implemented beta product contract
 
 ---
 
@@ -45,7 +44,7 @@ Given the same question — "Why does Trial 4 look different?" — a chat-with-P
 
 1. Demonstrate a working agentic router that visibly chooses between retrieval, code-executing data analysis, and quiz generation.
 2. Deliver a complete, coherent product experience (three-pane workspace, onboarding brief, persistent notebook) — not a technical proof of concept.
-3. Keep all source files, indexes, and learning history on the student's machine; send only task-scoped context to GPT-5.6.
+3. Keep all source files, indexes, and learning history on the student's machine; send only task-scoped context to the configured Responses API model in live mode.
 4. Close the learning loop honestly: practice quizzes are generated from a session-level concept log, and quiz results refresh the suggested starting points.
 5. Satisfy every OpenAI Build Week submission requirement (Section 10).
 
@@ -138,7 +137,7 @@ Takes over the center pane only (sidebar and notebook remain). One question at a
 | F1 | Ingest a user-selected local folder containing PDF, PPTX, DOCX, MD/TXT, and CSV files | P0 |
 | F2 | Build a local index: extracted text chunks with source anchors (file, page/section), plus dataset schemas (columns, types, row counts, basic stats) for every CSV | P0 |
 | F3 | Generate the workspace brief and 3–4 content-derived suggested starting points on index completion | P0 |
-| F4 | Route each user query to an intent in {retrieve, analyze, visualize, connect, quiz} via GPT-5.6, and stream router step events to the UI trace | P0 |
+| F4 | Route each user query to an intent in {retrieve, analyze, visualize, connect, quiz} via the configured Responses API model in live mode, and stream router step events to the UI trace | P0 |
 | F5 | For analyze/visualize: generate Python against the indexed schema, execute in a local sandboxed process, capture stdout/figures, and ground the answer in the results | P0 |
 | F6 | For retrieve/connect: answer from indexed chunks with mandatory citation chips (file + section) | P0 |
 | F7 | Maintain a session concept log; mark concepts shaky on repeat questions or incorrect quiz answers | P0 |
@@ -156,7 +155,7 @@ Takes over the center pane only (sidebar and notebook remain). One question at a
 
 - **Desktop web app:** Fieldnotes is served locally in the browser as a three-pane desktop web application.
 - **Indexer:** local pipeline extracting text (per-page/section anchors) and CSV schemas into a persistent local store. No cloud storage.
-- **Agent runtime:** orchestrates router → retrieval/document access/schema access/local analysis → grounded answer. GPT-5.6 (via the OpenAI API) performs intent classification, code generation, explanation, quiz generation, and concept-log updates.
+- **Agent runtime:** orchestrates router → retrieval/document access/schema access/local analysis → grounded answer. The configured OpenAI Responses API model performs live intent classification, code generation, explanation, quiz generation, and concept-log updates; deterministic fake mode is available for offline use.
 - **Local code sandbox:** generated Python executes in a subprocess with a restricted working directory (the workspace), captured stdout/stderr, and chart artifact export. No network access from the sandbox.
 - **Event stream:** agent step events stream to the UI as live updates to drive the router trace.
 
@@ -166,7 +165,7 @@ Stored locally, always: source files, index, embeddings, concept log, notebook a
 
 ### 8.3 Build-tooling requirement (hackathon)
 
-The product is built with Codex; GPT-5.6 powers the runtime agent. The README must document where Codex accelerated the workflow and where key decisions were made, and the majority of core functionality must be built within Codex sessions so a `/feedback` session ID can be submitted. Meta-narrative for the demo: an AI agent that writes analysis code, built by an AI agent that writes code.
+The product uses Codex during development and the OpenAI Responses API for live runtime reasoning. The default configured runtime model is `gpt-5`; fake mode is deterministic and never calls OpenAI.
 
 ---
 
@@ -186,13 +185,7 @@ The product is built with Codex; GPT-5.6 powers the runtime agent. The README mu
 
 ## 10. Hackathon submission compliance checklist
 
-- Working project built using Codex with GPT-5.6, fitting the **Education** track.
-- Category selected: Education.
-- Project description: what it is and how it works (derive from Sections 1–5).
-- Demo video: <3 minutes, public YouTube, audio explicitly covering how Codex and GPT-5.6 were used.
-- Code repository URL: public with license, or private shared with testing@devpost.com and build-week-event@openai.com.
-- README: setup instructions, bundled sample course folder (sample data), run guidance, and a highlighted section on where Codex accelerated the workflow and how GPT-5.6 and Codex were used.
-- /feedback Codex session ID from the session(s) where the majority of core functionality was built.
+Release-submission details are operational work, not runtime requirements. They are tracked in `tracker.md` and the release documentation.
 
 ### Judging-criteria mapping
 
@@ -208,7 +201,7 @@ The product is built with Codex; GPT-5.6 powers the runtime agent. The README mu
 1. (0:00–0:30) Pick the Physics II folder; indexing log ticks; workspace brief appears with counts and suggestions — *wow moment 1: it understood the folder before I asked anything.*
 2. (0:30–1:30) Tap "Trial 4 deviates — investigate?"; router trace streams (read CSV → wrote code → ran locally → matched ch6); decay chart renders; click the code chip to show the real script — *wow moment 2: it worked with my data, not just my documents.*
 3. (1:30–2:20) Ask "Explain this using my textbook"; retrieve trace + citation chips; concept log chip turns amber; hit "Quiz me"; answer two questions, one sourced from the CSV analysis — *wow moment 3: the loop closes.*
-4. (2:20–3:00) Notebook recap (chart, explainer, quiz score all persisted); voiceover on local-first boundary and on Codex + GPT-5.6 usage (mandatory audio requirement).
+4. (2:20–3:00) Notebook recap (chart, explainer, quiz score all persisted); close with the local-first boundary and live-versus-fake-mode behavior.
 
 ---
 
@@ -223,7 +216,7 @@ The product is built with Codex; GPT-5.6 powers the runtime agent. The README mu
 
 | Risk | Mitigation |
 |---|---|
-| Code-generation path is flaky on arbitrary CSVs | Constrain v1 to the bundled sample workspace for the demo; schema-grounded prompts; retry-with-error-feedback loop capped at 2 attempts |
+| Code-generation path is flaky on arbitrary CSVs | Constrain the demo to the bundled sample workspace; use schema-grounded prompts and surface sandbox failures honestly |
 | PDF parsing quality varies | Prefer clean, text-native PDFs in the sample folder; F11 graceful skip for failures |
 | "Local-first" challenged because reasoning is cloud-based | Precise boundary language (8.2) in UI, README, and video; never claim offline operation |
 | Scope creep vs. 4-day window | Pre-agreed cut list (Section 9); suggestions and notebook are lists, not systems |

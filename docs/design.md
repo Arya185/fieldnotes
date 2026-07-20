@@ -1,7 +1,7 @@
 # Fieldnotes — UI/UX Design
 
-**Version:** 1.0
-**Date:** July 17, 2026
+**Version:** 1.0.0-beta.1
+**Status:** design intent; the implemented interface is defined by `frontend/src/App.tsx` and its components
 **Companions:** prd.md, techstack.md, dataflow.md
 
 ---

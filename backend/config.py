@@ -276,20 +276,27 @@ def _validate_sandbox_runtime() -> str:
 
     with TemporaryDirectory() as temp_dir:
         temp_root = Path(temp_dir)
+        workspace_root = temp_root / "workspace"
+        artifacts_dir = workspace_root / "artifacts"
+        workspace_root.mkdir()
+        artifacts_dir.mkdir()
         script = temp_root / "probe.py"
-        result_path = temp_root / "result.json"
+        result_path = artifacts_dir / "result.json"
         script.write_text(
-            "from pathlib import Path\n"
-            "import json, os\n"
-            "Path(os.environ['FIELDNOTES_RESULT_PATH']).write_text(json.dumps({'ok': True}), encoding='utf-8')\n",
+            "write_result({'ok': True})\n",
             encoding="utf-8",
         )
         completed = subprocess.run(
-            [sys.executable, str(script)],
-            cwd=temp_root,
+            [sys.executable, "-I", str(ROOT_DIR / "backend" / "sandbox" / "runtime_runner.py")],
+            cwd=workspace_root,
             env={
                 "PYTHONUNBUFFERED": "1",
+                "PYTHONNOUSERSITE": "1",
+                "FIELDNOTES_WORKSPACE_ROOT": str(workspace_root),
+                "FIELDNOTES_ARTIFACTS_DIR": str(artifacts_dir),
+                "FIELDNOTES_SCRIPT_PATH": str(script),
                 "FIELDNOTES_RESULT_PATH": str(result_path),
+                "FIELDNOTES_CHART_PATH": str(artifacts_dir / "chart.png"),
                 "MPLBACKEND": "Agg",
                 "PATH": os.environ.get("PATH", ""),
             },

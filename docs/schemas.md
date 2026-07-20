@@ -4,7 +4,7 @@
 **Date:** July 17, 2026
 **Companions:** prd.md, techstack.md, dataflow.md, design.md
 
-This document is the single source of truth for every data shape two components must agree on: the SQLite database, the SSE event contract between backend and frontend, the GPT-5.6 structured-output schemas, and the dataset profile that forms the data-minimization boundary. Codex sessions build against these contracts; do not invent shapes elsewhere.
+This document is the single source of truth for every data shape two components must agree on: the SQLite database, the SSE event contract between backend and frontend, the Responses API structured-output schemas, and the dataset profile that forms the data-minimization boundary. Codex sessions build against these contracts; do not invent shapes elsewhere.
 
 Conventions: all IDs are lowercase UUID4 strings unless noted; all timestamps are ISO 8601 UTC strings (`created_at TEXT`); all enums are lowercase.
 
@@ -166,9 +166,9 @@ type QuizEvent =
 
 ---
 
-## 3. GPT-5.6 structured-output schemas
+## 3. Responses API structured-output schemas
 
-Passed as JSON Schema via the structured-outputs mechanism (verify exact API parameter names against current GPT-5.6 docs — see techstack.md §3.4). All use `"additionalProperties": false`.
+Passed as JSON Schema through the Responses API `text.format` mechanism. All use `"additionalProperties": false`.
 
 ### 3.1 Intent classification
 
@@ -263,7 +263,7 @@ Backend validates every `file_path` against the files table; cards referencing u
 
 ## 4. DatasetProfile (the data-minimization boundary)
 
-This is the **only** representation of tabular data ever sent to GPT-5.6 (dataflow.md §5). It serves as both the codegen prompt input and the privacy boundary — nothing outside this shape leaves the machine for a dataset.
+This is the **only** representation of tabular data sent to the configured Responses model (dataflow.md). It is both the codegen prompt input and privacy boundary; raw dataset rows do not leave the machine.
 
 ```ts
 interface DatasetProfile {
@@ -303,9 +303,11 @@ Derived directly from the above; listed for completeness. Codex should generate 
 
 | Endpoint | Request body | Response |
 |---|---|---|
-| `POST /index` | `{ "folder_path": str }` | `202` + SSE on `/index/events` |
+| `GET /health` | — | `{ status, version, mode, startup }` |
+| `POST /index` | `{ "folder_path": str }` | `202` + `{ status, workspace_id, run_id, events }` |
+| `GET /index/events/{run_id}` | — | SSE stream of `IndexEvent` |
 | `POST /ask` | `{ "workspace_id": str, "question": str }` | SSE stream of `AskEvent` |
-| `POST /quiz` | `{ "workspace_id": str, "concept_ids": [str] \| null }` (null = all shaky, then touched) | SSE stream of `QuizEvent` |
+| `POST /quiz`, `POST /quiz/start` | `{ "workspace_id": str, "concept_ids": [str] \| null }` (null = all shaky, then touched) | SSE stream of `QuizEvent` |
 | `POST /quiz/answer` | `{ "workspace_id": str, "attempt_id": str, "chosen_index": int }` | SSE stream containing `graded` then `quiz_done` |
 | `GET /notebook` | query: `workspace_id` | `{ "artifacts": ArtifactCard[] }` |
 | `GET /artifact/{id}` | query: `workspace_id` | payload (PNG / script text / JSON) |
@@ -323,8 +325,8 @@ interface ArtifactCard {
 
 ---
 
-## 6. Out of scope (deliberate)
+## 6. Implementation notes
 
-- Vector store schema — ChromaDB/LanceDB manage their own; chunks reference by `chunk.id`.
-- Migrations / schema versioning — delete `.fieldnotes/` and reindex.
-- Multi-workspace or user tables — one workspace, one local user, v1.
+- Embeddings are stored in SQLite and reference persisted chunks; no external vector-store schema is required.
+- Migrations and schema versioning are shipped as additive SQLite migrations during workspace open.
+- Multiple local workspaces are registered by stable workspace ID. There are no user or collaboration tables.

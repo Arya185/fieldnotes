@@ -1,6 +1,9 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
 import { LockBadge } from "./components/LockBadge";
+import { Composer } from "./components/Composer";
+import { EmptyState } from "./components/EmptyState";
+import { WorkspaceOverview } from "./components/WorkspaceOverview";
 import { MarkdownBlock } from "./lib/markdown";
 import {
   fetchArtifact,
@@ -1009,133 +1012,7 @@ export default function App() {
   const showFullSource = route === "source";
 
   function renderEmptyState(title: string, body: string, actionLabel?: string, action?: () => void) {
-    return (
-      <div className="empty-panel">
-        <div className="eyebrow">Next Step</div>
-        <h3>{title}</h3>
-        <p>{body}</p>
-        {actionLabel && action && (
-          <button className="button secondary" onClick={action}>
-            {actionLabel}
-          </button>
-        )}
-      </div>
-    );
-  }
-
-  function renderWorkspaceOverview() {
-    return (
-      <section className="workspace-overview stack">
-        <div className="hero-card">
-          <div className="eyebrow">Workspace Library</div>
-          <h2>{activeWorkspace?.title ?? "Choose a workspace"}</h2>
-          <p className="hero-copy">
-            {activeWorkspace
-              ? starterSummary
-              : "Index a local folder to start reading, asking grounded questions, and studying from your sources."}
-          </p>
-          <div className="hero-metrics">
-            <div className="metric-card">
-              <span className="metric-label">Documents</span>
-              <strong>{indexedDocumentCount}</strong>
-            </div>
-            <div className="metric-card">
-              <span className="metric-label">Status</span>
-              <strong>{activeWorkspace?.status ?? "idle"}</strong>
-            </div>
-            <div className="metric-card">
-              <span className="metric-label">Last indexed</span>
-              <strong>{formatRelative(activeWorkspace?.lastIndexedAt)}</strong>
-            </div>
-            <div className="metric-card">
-              <span className="metric-label">Indexed pages</span>
-              <strong>{indexedPages}</strong>
-            </div>
-          </div>
-        </div>
-
-        {runtimeMode === "fake" && (
-          <div className="hint-card status-callout">
-            Fake mode startup active. Retrieval real, answers deterministic, no OpenAI call required. Add live key in `.env` when ready.
-          </div>
-        )}
-
-        {!activeWorkspace &&
-          renderEmptyState(
-            "No workspace selected",
-            "Pick local folder, then index it. Recent workspaces stay in left rail for quick return.",
-          )}
-
-        <div className="content-grid">
-          <article className="workspace-pane">
-            <div className="section-heading">
-              <div>
-                <div className="eyebrow">Current Folder</div>
-                <h3>Document library</h3>
-              </div>
-              <span className="pill">{activeWorkspace?.status ?? "none"}</span>
-            </div>
-            <div className="doc-library-card">
-              <div className="doc-library-icon" aria-hidden="true">📁</div>
-              <div>
-                <strong>{activeWorkspace?.title ?? "No folder selected"}</strong>
-                <p className="muted">
-                  {indexedDocumentCount} indexed documents
-                  {lastIndexEntry?.chunkCount !== undefined ? ` · ${lastIndexEntry.chunkCount} chunks` : ""}
-                </p>
-                <p className="muted">
-                  {activeWorkspace?.folderPath
-                    ? `Folder: ${activeWorkspace.folderPath}`
-                    : "Indexing history will appear here."}
-                </p>
-                <p className="muted">
-                  {activeWorkspace?.lastIndexedAt
-                    ? `Last indexed ${formatDateTime(activeWorkspace.lastIndexedAt)}`
-                    : "Waiting for first successful index run."}
-                </p>
-                <p className="muted">File types: {fileTypeSummary}</p>
-              </div>
-            </div>
-          </article>
-
-          <article className="workspace-pane">
-            <div className="section-heading">
-              <div>
-                <div className="eyebrow">Index Progress</div>
-                <h3>Latest run</h3>
-              </div>
-            </div>
-            <ul className="progress-list polished">
-              {indexEvents.length === 0 && <li>No active indexing run.</li>}
-              {indexEvents.map((event, index) => (
-                <li key={`${event.event}-${index}`}>
-                  {event.event === "file_started" && `Started ${event.display_name}`}
-                  {event.event === "file_parsed" && `${event.display_name}: ${event.parse_summary}`}
-                  {event.event === "index_complete" && `Indexed ${event.file_count} files, ${event.chunk_count} chunks`}
-                  {event.event === "brief_ready" && event.brief.summary}
-                </li>
-              ))}
-            </ul>
-          </article>
-        </div>
-
-        {activeWorkspace?.status === "error" && (
-          <div className="hint-card">
-            Index failed. Review the folder path, then retry the same workspace or choose a different folder.
-          </div>
-        )}
-        {busy && activeWorkspace && (
-          <div className="hint-card status-callout">
-            Indexing in progress. Keep workspace open. Progress stream updates below and notes appear when run completes.
-          </div>
-        )}
-        {noBackend &&
-          renderEmptyState(
-            "Backend unavailable",
-            "Frontend loaded, backend did not answer health check. Start backend, then refresh workspace.",
-          )}
-      </section>
-    );
+    return <EmptyState title={title} body={body} actionLabel={actionLabel} onAction={action} />;
   }
 
   return (
@@ -1349,7 +1226,22 @@ export default function App() {
             autoScrollRef.current = nearBottom;
           }}
         >
-          {route === "workspace" && renderWorkspaceOverview()}
+          {route === "workspace" && (
+            <WorkspaceOverview
+              activeWorkspace={activeWorkspace}
+              starterSummary={starterSummary}
+              indexedDocumentCount={indexedDocumentCount}
+              indexedPages={indexedPages}
+              lastIndexEntry={lastIndexEntry}
+              fileTypeSummary={fileTypeSummary}
+              indexEvents={indexEvents}
+              runtimeMode={runtimeMode}
+              busy={busy}
+              noBackend={Boolean(noBackend)}
+              formatDateTime={formatDateTime}
+              formatRelative={formatRelative}
+            />
+          )}
 
           {route === "chat" && (
             <section className="chat-layout">
@@ -1918,31 +1810,15 @@ export default function App() {
         </div>
 
         {route === "chat" && (
-          <footer className="composer elevated-composer">
-            <textarea
-              aria-label="Ask Fieldnotes"
-              className="textarea"
-              placeholder="Ask grounded question..."
-              value={chatInput}
-              ref={composerRef}
-              onChange={(event) => setChatInput(event.target.value)}
-              onKeyDown={(event) => {
-                if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-                  event.preventDefault();
-                  void handleAsk();
-                }
-              }}
-            />
-            <div className="toolbar">
-              <button className="button" onClick={() => void handleAsk()} disabled={!activeWorkspaceId || busy}>
-                Send
-              </button>
-              <button className="button secondary" onClick={handleCancelResponse} disabled={!busy}>
-                Stop Generating
-              </button>
-              <span className="muted">Ctrl/Cmd+Enter send. Ctrl/Cmd+K focus. Escape stop. Shift+Cmd/Ctrl+R retry.</span>
-            </div>
-          </footer>
+          <Composer
+            value={chatInput}
+            inputRef={composerRef}
+            activeWorkspaceId={activeWorkspaceId}
+            busy={busy}
+            onChange={setChatInput}
+            onSubmit={() => void handleAsk()}
+            onCancel={handleCancelResponse}
+          />
         )}
       </main>
 

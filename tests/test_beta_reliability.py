@@ -13,6 +13,7 @@ from backend import config as backend_config
 from backend.db import connect_sqlite
 from backend.indexer.bm25 import tokenize
 from backend.indexer.discovery import discover_files
+from backend.sandbox.containment import SandboxLimitExceeded, SandboxPolicy
 from backend.sandbox import runner as sandbox_runner
 
 
@@ -56,31 +57,57 @@ class BetaReliabilityTests(unittest.TestCase):
     def test_tokenize_preserves_hyphenated_identifiers(self) -> None:
         self.assertEqual(tokenize("Explain topic-00 and field-notes"), ["explain", "topic-00", "and", "field-notes"])
 
-    def test_windows_platform_avoids_preexec_fn(self) -> None:
+    def test_windows_platform_uses_native_runner_without_preexec_fn(self) -> None:
         artifacts_dir = self.base / "artifacts"
         captured: dict[str, object] = {}
 
-        def fake_run(args, **kwargs):
-            captured["args"] = args
-            captured["kwargs"] = kwargs
-            result_path = Path(kwargs["env"]["FIELDNOTES_RESULT_PATH"])
+        def fake_runner(*, command, cwd, env, policy, preexec_fn):
+            captured["command"] = command
+            captured["cwd"] = cwd
+            captured["env"] = env
+            captured["policy"] = policy
+            captured["preexec_fn"] = preexec_fn
+            result_path = Path(env["FIELDNOTES_RESULT_PATH"])
             result_path.write_text('{"summary":"ok","metrics":{}}', encoding="utf-8")
             return type("Completed", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
-        with patch.object(sandbox_runner, "resource", None), patch("subprocess.run", fake_run):
+        with patch.object(sandbox_runner, "resource", None), patch.object(sandbox_runner, "run_platform_sandbox", fake_runner):
             result = sandbox_runner.run_generated_analysis(
                 workspace_root=self.base,
                 artifacts_dir=artifacts_dir,
                 answer_id="windows_case",
                 script_source=(
-                    "import json, os\n"
-                    "from pathlib import Path\n"
-                    "Path(os.environ['FIELDNOTES_RESULT_PATH']).write_text('{\"summary\":\"ok\",\"metrics\":{}}', encoding='utf-8')\n"
+                    "write_result({'summary': 'ok', 'metrics': {}})\n"
                 ),
             )
 
         self.assertEqual(result.result_payload["summary"], "ok")
-        self.assertNotIn("preexec_fn", captured["kwargs"])
+        self.assertIsNone(captured["preexec_fn"])
+        self.assertEqual(captured["cwd"], self.base)
+        self.assertEqual(captured["command"][1], "-I")
+        self.assertIsInstance(captured["policy"], SandboxPolicy)
+        self.assertEqual(captured["policy"].max_processes, 1)
+        self.assertEqual(captured["policy"].memory_bytes, sandbox_runner.DEFAULT_MEMORY_BYTES)
+
+    def test_windows_limit_failure_surfaces_clean_runtime_error(self) -> None:
+        artifacts_dir = self.base / "artifacts"
+
+        def fake_runner(*, command, cwd, env, policy, preexec_fn):
+            raise SandboxLimitExceeded("Analysis sandbox timed out after 1s")
+
+        with patch.object(sandbox_runner, "resource", None), patch.object(sandbox_runner, "run_platform_sandbox", fake_runner):
+            with self.assertRaisesRegex(RuntimeError, "timed out"):
+                sandbox_runner.run_generated_analysis(
+                    workspace_root=self.base,
+                    artifacts_dir=artifacts_dir,
+                    answer_id="windows_limit",
+                    script_source="while True:\n    pass\n",
+                    timeout_seconds=1,
+                )
+
+        self.assertFalse((artifacts_dir / "windows_limit_analysis.py").exists())
+        self.assertFalse((artifacts_dir / "windows_limit_result.json").exists())
+        self.assertFalse((artifacts_dir / "windows_limit_chart.png").exists())
 
     def test_dotenv_values_are_loaded_without_overriding_shell(self) -> None:
         dotenv_path = self.base / ".env"

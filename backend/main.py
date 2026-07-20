@@ -4,16 +4,20 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sqlite3
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from backend.agent.llm import LLMClient
 from backend.config import FIELDNOTES_VERSION, ConfigurationError, parse_env_flag, validate_runtime_configuration
-from backend.db import connect_sqlite
+from backend.db import connect_sqlite, latest_storage_warning_message
+from backend.errors import error_response, request_id_for, sse_error_payload
 from backend.indexer.bm25 import RetrievalChunk
 from backend.indexer.events import run_manager
 from backend.indexer.pipeline import run_indexing
@@ -59,28 +63,50 @@ from backend.storage import (
 from backend.release import FakeLLMClient
 
 
-app = FastAPI(title="Fieldnotes API", version=FIELDNOTES_VERSION)
-llm_client: LLMClient | object | None = None
-
-
-@app.on_event("startup")
-async def on_startup() -> None:
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    """Validate runtime prerequisites and expose release diagnostics for app lifetime."""
     try:
         diagnostics = validate_runtime_configuration()
     except ConfigurationError as exc:
-        app.state.startup_error = str(exc)
+        application.state.startup_error = str(exc)
         raise RuntimeError(str(exc)) from None
-    app.state.diagnostics = diagnostics
-    app.state.release_metadata = {
+    application.state.diagnostics = diagnostics
+    application.state.release_metadata = {
         "version": diagnostics.version,
         "build_timestamp": diagnostics.build_timestamp,
         "git_commit_hash": diagnostics.git_commit_hash,
     }
+    yield
+
+
+app = FastAPI(title="Fieldnotes API", version=FIELDNOTES_VERSION, lifespan=lifespan)
+llm_client: LLMClient | object | None = None
 
 
 @app.exception_handler(ConfigurationError)
 async def configuration_error_handler(_request: Request, exc: ConfigurationError) -> JSONResponse:
-    return JSONResponse(status_code=500, content={"detail": str(exc)})
+    return error_response(exc=exc, request_id="req_startup", context={"route": "configuration"})
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    return error_response(exc=exc, request_id=request_id_for(request), context={"route": str(request.url.path)})
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    return error_response(exc=exc, request_id=request_id_for(request), context={"route": str(request.url.path)})
+
+
+@app.exception_handler(sqlite3.DatabaseError)
+async def sqlite_error_handler(request: Request, exc: sqlite3.DatabaseError) -> JSONResponse:
+    return error_response(exc=exc, request_id=request_id_for(request), context={"route": str(request.url.path)})
+
+
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    return error_response(exc=exc, request_id=request_id_for(request), context={"route": str(request.url.path)})
 
 
 @app.get("/health")
@@ -88,12 +114,19 @@ async def get_health() -> dict[str, str]:
     diagnostics = getattr(app.state, "diagnostics", None)
     mode = "fake" if parse_env_flag(os.environ.get("FIELDNOTES_USE_FAKE_LLM", "0")) else "live"
     version = diagnostics.version if diagnostics is not None else FIELDNOTES_VERSION
-    return {
+    payload = {
         "status": "ok",
         "version": version,
         "mode": mode,
         "startup": "healthy",
     }
+    registry_warning = workspace_manager.last_recovery_warning()
+    if registry_warning:
+        payload["registry_warning"] = registry_warning
+    storage_warning = latest_storage_warning_message()
+    if storage_warning:
+        payload["storage_warning"] = storage_warning
+    return payload
 
 
 @app.post("/index", status_code=202)
@@ -135,11 +168,12 @@ async def get_index_events(run_id: str) -> StreamingResponse:
 
 
 @app.post("/ask")
-async def post_ask(request: AskRequest) -> StreamingResponse:
+async def post_ask(request: AskRequest, http_request: Request) -> StreamingResponse:
     """Stream grounded assistant output for a user question."""
 
     async def event_generator():
         answer_id = f"answer_{uuid4()}"
+        request_id = request_id_for(http_request)
         try:
             workspace_record = workspace_manager.get(request.workspace_id)
             if workspace_record is None:
@@ -505,12 +539,12 @@ async def post_ask(request: AskRequest) -> StreamingResponse:
             yield _sse(DoneEvent(event="done", answer_id=answer_id).model_dump())
         except Exception as exc:
             yield _sse(
-                ErrorEvent(
-                    event="error",
+                sse_error_payload(
+                    exc=exc,
+                    request_id=request_id,
                     answer_id=answer_id,
-                    message=str(exc),
-                    recoverable=False,
-                ).model_dump()
+                    context={"route": "/ask", "workspace_id": request.workspace_id},
+                )
             )
             return
 
@@ -519,10 +553,11 @@ async def post_ask(request: AskRequest) -> StreamingResponse:
 
 @app.post("/quiz")
 @app.post("/quiz/start")
-async def post_quiz_start(request: QuizRequest) -> StreamingResponse:
+async def post_quiz_start(request: QuizRequest, http_request: Request) -> StreamingResponse:
     """Start one grounded quiz question for the selected workspace."""
 
     async def event_generator():
+        request_id = request_id_for(http_request)
         try:
             workspace_record = workspace_manager.get(request.workspace_id)
             if workspace_record is None:
@@ -588,12 +623,12 @@ async def post_quiz_start(request: QuizRequest) -> StreamingResponse:
             )
         except Exception as exc:
             yield _sse(
-                ErrorEvent(
-                    event="error",
+                sse_error_payload(
+                    exc=exc,
+                    request_id=request_id,
                     answer_id=f"quiz_{uuid4()}",
-                    message=str(exc),
-                    recoverable=False,
-                ).model_dump()
+                    context={"route": "/quiz/start", "workspace_id": request.workspace_id},
+                )
             )
             return
 
@@ -601,10 +636,11 @@ async def post_quiz_start(request: QuizRequest) -> StreamingResponse:
 
 
 @app.post("/quiz/answer")
-async def post_quiz_answer(request: QuizAnswerRequest) -> StreamingResponse:
+async def post_quiz_answer(request: QuizAnswerRequest, http_request: Request) -> StreamingResponse:
     """Grade one persisted quiz attempt and update concept state."""
 
     async def event_generator():
+        request_id = request_id_for(http_request)
         try:
             workspace_record = workspace_manager.get(request.workspace_id)
             if workspace_record is None:
@@ -695,12 +731,12 @@ async def post_quiz_answer(request: QuizAnswerRequest) -> StreamingResponse:
             )
         except Exception as exc:
             yield _sse(
-                ErrorEvent(
-                    event="error",
+                sse_error_payload(
+                    exc=exc,
+                    request_id=request_id,
                     answer_id=f"quiz_{uuid4()}",
-                    message=str(exc),
-                    recoverable=False,
-                ).model_dump()
+                    context={"route": "/quiz/answer", "workspace_id": request.workspace_id, "attempt_id": request.attempt_id},
+                )
             )
             return
 

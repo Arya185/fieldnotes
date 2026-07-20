@@ -10,6 +10,9 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -63,6 +66,7 @@ def main() -> int:
     RELEASE_ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     results: list[tuple[str, bool, str]] = []
     backend_process: subprocess.Popen[str] | None = None
+    base_url = f"http://127.0.0.1:{BACKEND_PORT}"
 
     try:
         env = os.environ.copy()
@@ -90,22 +94,8 @@ def main() -> int:
             stderr=subprocess.PIPE,
             text=True,
         )
-        _wait_for_backend_process(backend_process)
+        health_payload = _wait_for_backend_http(backend_process, base_url)
         results.append(("backend starts", True, "uvicorn healthy"))
-
-        from fastapi.testclient import TestClient
-
-        os.environ["OPENAI_API_KEY"] = env["OPENAI_API_KEY"]
-        os.environ["FIELDNOTES_USE_FAKE_LLM"] = env["FIELDNOTES_USE_FAKE_LLM"]
-
-        from backend.main import app
-
-        client = TestClient(app)
-
-        health = client.get("/health")
-        if health.status_code != 200:
-            raise RuntimeError(f"/health returned {health.status_code}")
-        health_payload = health.json()
         if health_payload != {
             "status": "ok",
             "version": expected_version(),
@@ -128,10 +118,8 @@ def main() -> int:
 
         frontend_package = json.loads((ROOT_DIR / "frontend" / "package.json").read_text(encoding="utf-8"))
         frontend_version = frontend_package["version"]
-        backend_openapi = client.get("/openapi.json")
-        if backend_openapi.status_code != 200:
-            raise RuntimeError(f"/openapi.json returned {backend_openapi.status_code}")
-        openapi_version = backend_openapi.json()["info"]["version"]
+        openapi_payload = _request_json(base_url, "GET", "/openapi.json")
+        openapi_version = openapi_payload["body"]["info"]["version"]
         if expected_version() != frontend_version or expected_version() != openapi_version:
             raise RuntimeError(
                 "Version mismatch: "
@@ -154,20 +142,20 @@ def main() -> int:
             workspace = Path(temp_dir) / "release_demo"
             build_demo_workspace(workspace)
 
-            accepted = client.post("/index", json={"folder_path": str(workspace)}).json()
-            events = _parse_sse(client.get(accepted["events"]).text)
+            accepted = _request_json(base_url, "POST", "/index", {"folder_path": str(workspace)})["body"]
+            events = _request_sse(base_url, "GET", accepted["events"])
             if not any(event["event"] == "index_complete" for event in events):
                 raise RuntimeError("index_complete event missing")
             results.append(("workspace indexing succeeds", True, f"workspace_id={accepted['workspace_id']}"))
 
-            ask_events = _parse_sse(
-                client.post(
-                    "/ask",
-                    json={
-                        "workspace_id": accepted["workspace_id"],
-                        "question": "Why does Trial 4 look different?",
-                    },
-                ).text
+            ask_events = _request_sse(
+                base_url,
+                "POST",
+                "/ask",
+                {
+                    "workspace_id": accepted["workspace_id"],
+                    "question": "Why does Trial 4 look different?",
+                },
             )
             if not any(event["event"] == "done" for event in ask_events):
                 raise RuntimeError("ask stream missing done event")
@@ -175,41 +163,48 @@ def main() -> int:
             document_chip = next(chip for chip in citations["chips"] if chip["chip_type"] == "document")
             results.append(("chat request succeeds", True, document_chip["anchor"]))
 
-            quiz_start = _parse_sse(
-                client.post(
-                    "/quiz/start",
-                    json={
-                        "workspace_id": accepted["workspace_id"],
-                        "concept_ids": ["grounding"],
-                    },
-                ).text
+            quiz_start = _request_sse(
+                base_url,
+                "POST",
+                "/quiz/start",
+                {
+                    "workspace_id": accepted["workspace_id"],
+                    "concept_ids": ["grounding"],
+                },
             )
             question = next(event for event in quiz_start if event["event"] == "question")
-            quiz_end = _parse_sse(
-                client.post(
-                    "/quiz/answer",
-                    json={
-                        "workspace_id": accepted["workspace_id"],
-                        "attempt_id": question["attempt_id"],
-                        "chosen_index": 0,
-                    },
-                ).text
+            quiz_end = _request_sse(
+                base_url,
+                "POST",
+                "/quiz/answer",
+                {
+                    "workspace_id": accepted["workspace_id"],
+                    "attempt_id": question["attempt_id"],
+                    "chosen_index": 0,
+                },
             )
             if [event["event"] for event in quiz_end] != ["graded", "quiz_done"]:
                 raise RuntimeError("quiz flow returned wrong event sequence")
             results.append(("quiz flow succeeds", True, question["source_anchor"]))
 
-            notebook = client.get("/notebook", params={"workspace_id": accepted["workspace_id"]}).json()
+            notebook = _request_json(
+                base_url,
+                "GET",
+                "/notebook",
+                params={"workspace_id": accepted["workspace_id"]},
+            )["body"]
             if not notebook["artifacts"]:
                 raise RuntimeError("notebook returned no artifacts")
             results.append(("notebook loads", True, f"artifacts={len(notebook['artifacts'])}"))
 
             anchor = document_chip["anchor"].split("#", 1)[1]
             file_id = document_chip["anchor"].split("#", 1)[0]
-            source = client.get(
+            source = _request_json(
+                base_url,
+                "GET",
                 f"/source/{file_id}/{anchor}",
                 params={"workspace_id": accepted["workspace_id"]},
-            ).json()
+            )["body"]
             if not source["text"]:
                 raise RuntimeError("source viewer returned empty text")
             results.append(("source viewer opens", True, source["label"]))
@@ -229,12 +224,7 @@ def main() -> int:
         results.append(("release verification", False, str(exc)))
     finally:
         if backend_process is not None:
-            backend_process.terminate()
-            try:
-                backend_process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                backend_process.kill()
-                backend_process.wait(timeout=10)
+            _terminate_backend_process(backend_process)
 
     summary_path = RELEASE_ARTIFACTS_DIR / "release_check_summary.json"
     summary_path.write_text(
@@ -268,6 +258,113 @@ def _wait_for_backend_process(process: subprocess.Popen[str]) -> None:
     stderr = process.stderr.read().strip() if process.stderr is not None else ""
     stdout = process.stdout.read().strip() if process.stdout is not None else ""
     raise RuntimeError(stderr or stdout or "backend did not start")
+
+
+def _wait_for_backend_http(process: subprocess.Popen[str], base_url: str) -> dict:
+    deadline = time.time() + 20
+    last_error = "backend did not become healthy"
+    while time.time() < deadline:
+        if process.poll() is not None:
+            break
+        try:
+            response = _request_json(base_url, "GET", "/health")
+            if response["status"] == 200:
+                return response["body"]
+            last_error = _format_http_failure("/health", response["status"], response["body_text"], response["elapsed_ms"])
+        except Exception as exc:
+            last_error = str(exc)
+        time.sleep(0.5)
+    stderr = process.stderr.read().strip() if process.stderr is not None else ""
+    stdout = process.stdout.read().strip() if process.stdout is not None else ""
+    raise RuntimeError(last_error if not (stderr or stdout) else f"{last_error}; stdout={stdout}; stderr={stderr}")
+
+
+def _terminate_backend_process(process: subprocess.Popen[str]) -> None:
+    if process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=10)
+
+
+def _request_json(
+    base_url: str,
+    method: str,
+    path: str,
+    body: dict | None = None,
+    *,
+    params: dict[str, str] | None = None,
+    timeout: float = 20.0,
+) -> dict:
+    response = _request_text(base_url, method, path, body, params=params, timeout=timeout)
+    try:
+        parsed = json.loads(response["body_text"])
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"{path} returned non-JSON response in {response['elapsed_ms']}ms: {response['body_text'][:400]}"
+        ) from exc
+    if response["status"] >= 400:
+        raise RuntimeError(_format_http_failure(path, response["status"], response["body_text"], response["elapsed_ms"]))
+    response["body"] = parsed
+    return response
+
+
+def _request_sse(
+    base_url: str,
+    method: str,
+    path: str,
+    body: dict | None = None,
+    *,
+    params: dict[str, str] | None = None,
+    timeout: float = 60.0,
+) -> list[dict]:
+    response = _request_text(base_url, method, path, body, params=params, timeout=timeout)
+    if response["status"] >= 400:
+        raise RuntimeError(_format_http_failure(path, response["status"], response["body_text"], response["elapsed_ms"]))
+    return _parse_sse(response["body_text"])
+
+
+def _request_text(
+    base_url: str,
+    method: str,
+    path: str,
+    body: dict | None = None,
+    *,
+    params: dict[str, str] | None = None,
+    timeout: float = 20.0,
+) -> dict:
+    query = f"?{urlencode(params)}" if params else ""
+    url = f"{base_url}{path}{query}"
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    headers = {"accept": "application/json"}
+    if data is not None:
+        headers["content-type"] = "application/json"
+    request = Request(url, data=data, method=method, headers=headers)
+    started = time.perf_counter()
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            body_text = response.read().decode("utf-8")
+            status = response.status
+    except HTTPError as exc:
+        body_text = exc.read().decode("utf-8", errors="replace")
+        status = exc.code
+    except URLError as exc:
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        raise RuntimeError(f"{path} request failed after {elapsed_ms}ms: {exc.reason}") from exc
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
+    return {
+        "status": status,
+        "body_text": body_text,
+        "elapsed_ms": elapsed_ms,
+    }
+
+
+def _format_http_failure(path: str, status: int, body_text: str, elapsed_ms: int) -> str:
+    body = body_text.strip().replace("\n", "\\n")
+    return f"{path} failed status={status} elapsed_ms={elapsed_ms} body={body[:400]}"
 
 
 def _parse_sse(body: str) -> list[dict]:

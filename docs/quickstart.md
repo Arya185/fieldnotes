@@ -46,6 +46,22 @@ On Windows, use PowerShell or Command Prompt for commands above. Do not use `run
 
 ## Automated smoke
 
+Phase 0 configuration and startup verification:
+
+```bash
+python scripts/exit_phase0.py
+```
+
+With `OPENAI_API_KEY` set, Phase 0 also runs one live Responses API probe against configured `OPENAI_MODEL`. Without credentials, Phase 0 reports `LIVE API ... SKIPPED` and still passes.
+
+Full Phase 1 workflow verification:
+
+```bash
+python scripts/exit_phase1.py
+```
+
+Release verification:
+
 ```bash
 python scripts/release_check.py
 ```

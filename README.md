@@ -94,11 +94,21 @@ Health check:
 curl http://127.0.0.1:8000/health
 ```
 
+Run portable Phase 0 verification:
+
+```bash
+python scripts/exit_phase0.py
+```
+
+It checks configuration, startup, health, fake mode, live missing-key validation, and Responses API configuration. `scripts/exit_phase0.sh` is a legacy Unix wrapper.
+
 Run release smoke:
 
 ```bash
 python scripts/release_check.py
 ```
+
+Release smoke starts documented `uvicorn` server, waits for `/health`, then exercises real HTTP and SSE endpoints over `127.0.0.1` for indexing, ask, notebook, quiz, and source flows. Script always shuts server down before exit and writes summary to `scripts/release_artifacts/release_check_summary.json`.
 
 `run.sh` is Unix helper only. On Windows, start backend and frontend with direct `python` / `npm` commands above.
 
@@ -124,12 +134,20 @@ python scripts/run_benchmarks.py
 python scripts/release_check.py
 ```
 
+## CI Validation
+
+GitHub Actions keeps fake-mode validation on every push and pull request. That workflow installs backend and frontend dependencies, runs backend tests, frontend tests, benchmarks, and release verification with `FIELDNOTES_USE_FAKE_LLM=1`.
+
+Optional live OpenAI validation runs in separate `live-openai-validation` job only when repository secret `OPENAI_API_KEY` is present. Job runs `python scripts/exit_phase0.py` and `python -m unittest tests.test_live_responses_api_integration` against configured live model. Without secret, job is skipped cleanly. Expected runtime: usually under 1 minute. Expected cost: minimal, one tiny probe plus one tiny integration request.
+
 ## Documentation Index
 
 - [Installation guide](docs/installation.md)
 - [Quick start](docs/quickstart.md)
 - [Developer guide](docs/developer-guide.md)
 - [Architecture overview](docs/architecture.md)
+- [API reference](docs/api.md)
+- [Sandbox security](docs/sandbox-security.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Configuration reference](docs/configuration.md)
 - [Beta onboarding](docs/beta-onboarding.md)

@@ -116,14 +116,14 @@ class FakeLLMClient:
             title="Release check analysis",
             needs_chart=True,
             script=(
-                "import base64, json, os\n"
-                "from pathlib import Path\n"
+                "import base64\n"
+                "import json\n"
                 "import pandas as pd\n"
                 f"frame = pd.read_csv({file_path!r})\n"
                 "summary = {'rows': int(len(frame)), 'columns': list(frame.columns)}\n"
                 "png_bytes = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Z0XQAAAAASUVORK5CYII=')\n"
-                "Path(os.environ['FIELDNOTES_CHART_PATH']).write_bytes(png_bytes)\n"
-                "Path(os.environ['FIELDNOTES_RESULT_PATH']).write_text(json.dumps({'summary': 'release check complete', 'metrics': summary}), encoding='utf-8')\n"
+                "write_chart_bytes(png_bytes)\n"
+                "write_result({'summary': 'release check complete', 'metrics': summary})\n"
             ),
         )
 

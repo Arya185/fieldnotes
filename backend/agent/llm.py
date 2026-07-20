@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from typing import Iterator
 
-from openai import OpenAI
+from openai import APITimeoutError, AuthenticationError, OpenAI
 from pydantic import BaseModel, ConfigDict
 
 from backend.agent.executor import ExecutionContext, Executor
@@ -47,11 +48,109 @@ class AnalysisScriptSchema(BaseModel):
     script: str
 
 
+@dataclass(frozen=True)
+class ResponsesAPIProbeResult:
+    model: str
+    output_text: str
+    response_id: str | None
+
+
+class ResponsesAPIProbeError(RuntimeError):
+    """Raised when live Responses API verification fails."""
+
+
+def verify_responses_api_connection(
+    *,
+    model: str,
+    api_key: str | None = None,
+    timeout_seconds: float = 10.0,
+    client: OpenAI | None = None,
+) -> ResponsesAPIProbeResult:
+    """Run minimal live Responses API probe through shipped OpenAI client wrapper."""
+
+    normalized_model = model.strip()
+    if not normalized_model:
+        raise ResponsesAPIProbeError("OPENAI_MODEL must not be empty")
+
+    wrapper = LLMClient(
+        model=normalized_model,
+        timeout_seconds=timeout_seconds,
+        api_key=api_key,
+        client=client,
+        max_retries=0,
+    )
+
+    try:
+        response = wrapper.client.responses.create(
+            model=normalized_model,
+            store=False,
+            input=[
+                {
+                    "role": "developer",
+                    "content": "Return JSON only. Reply with {\"status\":\"ok\"}.",
+                },
+                {
+                    "role": "user",
+                    "content": "ping",
+                },
+            ],
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": "live_probe",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "status": {"type": "string"},
+                        },
+                        "required": ["status"],
+                        "additionalProperties": False,
+                    },
+                    "strict": True,
+                }
+            },
+        )
+    except AuthenticationError as exc:
+        raise ResponsesAPIProbeError("OpenAI authentication failed. Check OPENAI_API_KEY.") from exc
+    except APITimeoutError as exc:
+        raise ResponsesAPIProbeError(
+            f"OpenAI Responses API probe timed out after {timeout_seconds}s. Increase timeout or retry."
+        ) from exc
+    except Exception as exc:
+        raise ResponsesAPIProbeError(f"OpenAI Responses API probe failed: {exc}") from exc
+
+    output_text = getattr(response, "output_text", "") or ""
+    if not output_text.strip():
+        raise ResponsesAPIProbeError("OpenAI Responses API probe returned empty output")
+
+    try:
+        payload = json.loads(output_text)
+    except json.JSONDecodeError as exc:
+        raise ResponsesAPIProbeError("OpenAI Responses API probe returned invalid JSON") from exc
+
+    if payload.get("status") != "ok":
+        raise ResponsesAPIProbeError(f"OpenAI Responses API probe returned unexpected payload: {payload}")
+
+    return ResponsesAPIProbeResult(
+        model=normalized_model,
+        output_text=output_text,
+        response_id=getattr(response, "id", None),
+    )
+
+
 class LLMClient:
     """Thin wrapper around OpenAI Responses API."""
 
-    def __init__(self, model: str = OPENAI_MODEL) -> None:
-        self.client = OpenAI(timeout=30.0, max_retries=1)
+    def __init__(
+        self,
+        model: str = OPENAI_MODEL,
+        *,
+        timeout_seconds: float = 30.0,
+        api_key: str | None = None,
+        client: OpenAI | None = None,
+        max_retries: int = 1,
+    ) -> None:
+        self.client = client or OpenAI(api_key=api_key, timeout=timeout_seconds, max_retries=max_retries)
         self.model = model
         self.reranker = DeterministicReranker()
         self.planner = Planner(self.client, self.model)
@@ -278,11 +377,11 @@ class LLMClient:
                     "content": (
                         "Write one local Python analysis script for workspace data. "
                         "Return JSON only. target_file_path must match one provided DatasetProfile file_path exactly. "
-                        "Script must read target_file_path relative to cwd. "
-                        "Script must write JSON object to os.environ['FIELDNOTES_RESULT_PATH'] with keys "
-                        "'summary' (string) and 'metrics' (object). "
-                        "If chart useful, save PNG to os.environ['FIELDNOTES_CHART_PATH']. "
-                        "Script may use pandas, numpy, matplotlib, json, os, pathlib only."
+                        "Script must read target_file_path with pandas from workspace-relative path only. "
+                        "Script must call write_result({'summary': <string>, 'metrics': <object>}). "
+                        "If chart useful, call save_chart() or write_chart_bytes(...). "
+                        "Available modules: pandas, numpy, matplotlib.pyplot, json, math, statistics, re, csv, collections, datetime, typing. "
+                        "Do not use os, pathlib, open, subprocess, sockets, imports outside allowed list, or absolute paths."
                     ),
                 },
                 {

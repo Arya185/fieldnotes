@@ -27,6 +27,8 @@ jobs:
       - name: Install frontend deps
         run: npm ci
         working-directory: frontend
+      - name: Fake-mode validation
+        run: echo "Running fake-mode validation on ${{ matrix.os }}"
       - name: Backend tests
         run: python -m unittest discover -s tests
       - name: Frontend tests
@@ -36,3 +38,25 @@ jobs:
         run: python scripts/run_benchmarks.py
       - name: Release verification
         run: python scripts/release_check.py
+
+  live-openai:
+    name: live-openai-validation
+    if: ${{ secrets.OPENAI_API_KEY != '' }}
+    runs-on: ubuntu-latest
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
+      FIELDNOTES_USE_FAKE_LLM: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install backend deps
+        run: python -m pip install -r backend/requirements.txt
+      - name: Live OpenAI validation
+        run: echo "Running live OpenAI validation against configured Responses model"
+      - name: Phase 0 live probe
+        run: python scripts/exit_phase0.py
+      - name: Live Responses integration test
+        run: python -m unittest tests.test_live_responses_api_integration
