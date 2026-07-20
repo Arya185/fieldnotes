@@ -6,7 +6,7 @@ Version: `1.0.0-beta.1`
 
 - Python 3.12
 - Node.js 20+
-- `OPENAI_API_KEY` for live Responses API mode
+- `OPENAI_API_KEY` only if you want live Responses API mode
 
 ## Backend install
 
@@ -56,7 +56,11 @@ Optional fake mode in `.env`:
 FIELDNOTES_USE_FAKE_LLM=1
 ```
 
-This bypasses live OpenAI calls for CI, release smoke, and offline local verification. Use live mode with `OPENAI_API_KEY` for beta feedback on retrieval and answer quality.
+No API key required for local startup. If `OPENAI_API_KEY` is absent, Fieldnotes starts automatically in fake mode. If `OPENAI_API_KEY` is present, Fieldnotes starts automatically in live mode with configured `OPENAI_MODEL` or project default. No config edits required to switch between modes.
+
+Setting `FIELDNOTES_USE_FAKE_LLM=1` still forces fake mode when no API key is present. `OPENAI_API_KEY` always takes precedence over fake-mode flag.
+
+Fake mode bypasses live OpenAI calls for CI, release smoke, and offline local verification. Use live mode with `OPENAI_API_KEY` for beta feedback on retrieval and answer quality.
 
 Optional live production validation:
 

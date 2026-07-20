@@ -1,7 +1,7 @@
 # Fieldnotes — Architecture Overview
 
 **Version:** 1.0.0-beta.1  
-**Date:** July 18, 2026  
+**Date:** July 20, 2026  
 **Purpose:** Describe shipped beta runtime. This document explains system architecture only. It does **not** define APIs, data contracts, or event schemas.
 
 **Companions:** prd.md, techstack.md, dataflow.md, schemas.md, design.md
@@ -30,7 +30,7 @@ The architecture intentionally minimizes cloud dependency:
 - notebook remains local
 - generated artifacts remain local
 
-GPT-5 is used through Responses API for reasoning tasks. Internal release smoke can swap deterministic fake client without changing public API surface.
+GPT-5 is used through Responses API for reasoning tasks when `OPENAI_API_KEY` is present. Otherwise startup falls back automatically to deterministic fake client without changing public API surface.
 
 ---
 
@@ -169,7 +169,7 @@ Workspace database opens also run SQLite integrity validation. When corruption i
 Application launch follows this sequence:
 
 1. Backend starts.
-2. Startup validation checks env, registry writes, SQLite writes, sandbox readiness.
+2. Startup validation checks env, resolves live versus fake mode, validates registry writes, SQLite writes, and sandbox readiness.
 3. SQLite opens.
 4. Frontend connects.
 5. Previous workspace metadata is restored.

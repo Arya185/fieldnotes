@@ -72,7 +72,7 @@ def main() -> int:
         env = os.environ.copy()
         use_fake_mode = env.get("FIELDNOTES_USE_FAKE_LLM", "0") == "1" or not env.get("OPENAI_API_KEY")
         if use_fake_mode:
-            env.setdefault("OPENAI_API_KEY", "release-check-key")
+            env.pop("OPENAI_API_KEY", None)
             env["FIELDNOTES_USE_FAKE_LLM"] = "1"
         else:
             env["FIELDNOTES_USE_FAKE_LLM"] = "0"

@@ -7,7 +7,7 @@ This document records delivered capability, not a future implementation contract
 
 | Phase | Delivered status | Evidence |
 |---|---|---|
-| 0 - configuration and documentation | Complete | `scripts/exit_phase0.py` verifies configuration, startup, health, fake mode, live missing-key validation, and Responses configuration. |
+| 0 - configuration and documentation | Complete | `scripts/exit_phase0.py` verifies configuration, startup, health, fake mode, automatic live-to-fake fallback, and Responses configuration. |
 | 1 - indexing foundation | Complete | Stable workspaces, migration-aware SQLite bootstrap, parsers, chunking, CSV profiles, local embeddings, retrieval, `/index`, and index SSE. `scripts/exit_phase1.py` exercises the workflow. |
 | 2 - grounded agent | Complete | Responses API client, deterministic fake client, planner/executor, local sandbox, artifacts, reranking, and internal diagnostics. |
 | 3 - workspace frontend | Complete | React workspace, streaming chat, citations/source viewer, notebook, quiz, empty/error states, and developer diagnostics. |

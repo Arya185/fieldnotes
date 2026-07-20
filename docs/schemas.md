@@ -1,7 +1,7 @@
 # Fieldnotes — Schemas
 
-**Version:** 1.0
-**Date:** July 17, 2026
+**Version:** `1.0.0-beta.1`
+**Date:** July 20, 2026
 **Companions:** prd.md, techstack.md, dataflow.md, design.md
 
 This document is the single source of truth for every data shape two components must agree on: the SQLite database, the SSE event contract between backend and frontend, the Responses API structured-output schemas, and the dataset profile that forms the data-minimization boundary. Codex sessions build against these contracts; do not invent shapes elsewhere.
@@ -131,7 +131,8 @@ type AskEvent =
       title: string; url?: string }                  // url for chart PNGs
   | { event: "citations"; answer_id: string; chips: CitationChip[] }
   | { event: "concepts"; answer_id: string; updates: ConceptUpdate[] }
-  | { event: "error";    answer_id: string; message: string; recoverable: boolean }
+  | { event: "error";    answer_id: string; code: string; message: string;
+      recoverable: boolean; request_id?: string }
   | { event: "done";     answer_id: string };
 
 interface CitationChip {
@@ -148,7 +149,7 @@ interface ConceptUpdate {
 }
 ```
 
-Ordering guarantee per answer: `intent` → one or more `step` → interleaved `token`/`artifact` → `citations` → `concepts` → `done`. `error` may replace any tail; `recoverable: true` means a retry `step` follows.
+Ordering guarantee per answer: `intent` → one or more `step` → interleaved `token`/`artifact` → `citations` → `concepts` → `done`. `error` may replace any tail and terminate stream cleanly.
 
 ### 2.3 Channel: quiz — `POST /quiz` (SSE response)
 
@@ -162,6 +163,8 @@ type QuizEvent =
       chip: CitationChip; concept_update: ConceptUpdate }
   | { event: "quiz_done"; score: number; total: number; artifact_id: string;
       refreshed_starters: StarterCard[] }            // loop closure (F7, F8)
+  | { event: "error"; attempt_id?: string; code: string; message: string;
+      recoverable: boolean; request_id?: string }
 ```
 
 ---

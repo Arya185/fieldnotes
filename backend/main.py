@@ -15,7 +15,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from backend.agent.llm import LLMClient
-from backend.config import FIELDNOTES_VERSION, ConfigurationError, parse_env_flag, validate_runtime_configuration
+from backend.config import FIELDNOTES_VERSION, ConfigurationError, determine_llm_mode, validate_runtime_configuration
 from backend.db import connect_sqlite, latest_storage_warning_message
 from backend.errors import error_response, request_id_for, sse_error_payload
 from backend.indexer.bm25 import RetrievalChunk
@@ -112,7 +112,7 @@ async def generic_exception_handler(request: Request, exc: Exception) -> JSONRes
 @app.get("/health")
 async def get_health() -> dict[str, str]:
     diagnostics = getattr(app.state, "diagnostics", None)
-    mode = "fake" if parse_env_flag(os.environ.get("FIELDNOTES_USE_FAKE_LLM", "0")) else "live"
+    mode = determine_llm_mode()
     version = diagnostics.version if diagnostics is not None else FIELDNOTES_VERSION
     payload = {
         "status": "ok",
@@ -818,7 +818,7 @@ def _sse(payload: dict) -> str:
 def _get_llm_client():
     global llm_client
     if llm_client is None:
-        if parse_env_flag(os.environ.get("FIELDNOTES_USE_FAKE_LLM", "0")):
+        if determine_llm_mode() == "fake":
             llm_client = FakeLLMClient()
         else:
             llm_client = LLMClient()

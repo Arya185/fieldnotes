@@ -28,6 +28,7 @@ def npm_executable(
 
     raise RuntimeError(
         "npm executable unavailable. "
+        f"Platform: {platform or os.name}. "
         f"Searched executable names: {', '.join(searched_names)}. "
         f"Current PATH: {os.environ.get('PATH', '')}. "
         f"Current working directory: {Path.cwd()}. "

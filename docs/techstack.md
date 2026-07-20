@@ -14,7 +14,7 @@
 | Parsing | PyMuPDF, python-pptx, python-docx, pandas, text/CSV parsers |
 | Retrieval | BM25, deterministic local embeddings, SQLite vector search, configurable hybrid fusion, deterministic reranking |
 | LLM | OpenAI Python SDK and the Responses API; default model `gpt-5` |
-| Offline mode | Deterministic fake client, enabled with `FIELDNOTES_USE_FAKE_LLM=1` |
+| Offline mode | Deterministic fake client, used when `FIELDNOTES_USE_FAKE_LLM=1` or when no `OPENAI_API_KEY` is present |
 | Analysis | Local Python subprocess sandbox with pandas, NumPy, SciPy, and matplotlib Agg |
 | Streaming | Fetch-consumed Server-Sent Events |
 | Observability | Optional internal tracing, metrics, retrieval inspection, and benchmark JSON |
@@ -33,11 +33,11 @@ Retrieval remains configurable with `FIELDNOTES_RETRIEVAL_PROVIDER= bm25 | vecto
 
 ## Frontend
 
-The React single-page interface is desktop-first and uses local component state plus browser storage for client-only preferences. `frontend/src/App.tsx` composes the shell, while `components/Composer.tsx`, `components/EmptyState.tsx`, `components/WorkspaceOverview.tsx`, and `components/LockBadge.tsx` cover shared UI. `frontend/src/lib/api.ts` owns REST and fetch-SSE calls. Vite proxies local API routes to `127.0.0.1:8000` during development.
+The React single-page interface is desktop-first and uses local component state plus browser storage for client-only preferences. `frontend/src/App.tsx` composes shell, while `frontend/src/components/Composer.tsx`, `frontend/src/components/EmptyState.tsx`, `frontend/src/components/WorkspaceOverview.tsx`, and `frontend/src/components/LockBadge.tsx` cover shared UI. `frontend/src/lib/api.ts` owns REST and fetch-SSE calls. Vite proxies local API routes to `127.0.0.1:8000` during development.
 
 ## Configuration
 
-The backend loads project-root `.env` before startup validation without overriding shell variables. Required live configuration is `OPENAI_API_KEY`; `OPENAI_MODEL` defaults to `gpt-5`. See [configuration.md](configuration.md) for retrieval, embedding, context, and telemetry settings.
+The backend loads project-root `.env` before startup validation without overriding shell variables. `OPENAI_API_KEY` enables live mode automatically; otherwise runtime falls back to fake mode. `OPENAI_MODEL` defaults to `gpt-5`. See [configuration.md](configuration.md) for retrieval, embedding, context, and telemetry settings.
 
 ## Commands
 

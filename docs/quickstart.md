@@ -12,10 +12,12 @@ Edit `.env`:
 OPENAI_API_KEY=your_key
 ```
 
+No API key required for local startup. If `OPENAI_API_KEY` is absent, Fieldnotes starts automatically in fake mode. Adding `OPENAI_API_KEY` switches startup to live OpenAI automatically.
+
 Then start backend:
 
 ```bash
-python -m uvicorn backend.main:app
+python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
 ```
 
 ## Start frontend dev server
@@ -52,7 +54,7 @@ Phase 0 configuration and startup verification:
 python scripts/exit_phase0.py
 ```
 
-With `OPENAI_API_KEY` set, Phase 0 also runs one live Responses API probe against configured `OPENAI_MODEL`. Without credentials, Phase 0 reports `LIVE API ... SKIPPED` and still passes.
+With `OPENAI_API_KEY` set, Phase 0 also runs one live Responses API probe against configured `OPENAI_MODEL`. Without credentials, startup still uses fake mode automatically, and Phase 0 reports `LIVE API ... SKIPPED`.
 
 Full Phase 1 workflow verification:
 

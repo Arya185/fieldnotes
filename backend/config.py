@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import sqlite3
 import subprocess
@@ -69,6 +70,8 @@ DEFAULT_USE_FAKE_LLM = "0"
 DEFAULT_OPENAI_MODEL = "gpt-5"
 DEFAULT_OPENAI_API_KEY = ""
 
+logger = logging.getLogger("fieldnotes.startup")
+
 RETRIEVAL_PROVIDER = os.environ.get("FIELDNOTES_RETRIEVAL_PROVIDER", DEFAULT_RETRIEVAL_PROVIDER)
 EMBEDDINGS_PROVIDER = os.environ.get("FIELDNOTES_EMBEDDINGS_PROVIDER", DEFAULT_EMBEDDINGS_PROVIDER)
 EMBEDDING_MODEL = os.environ.get("FIELDNOTES_EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL)
@@ -98,6 +101,39 @@ def format_missing_openai_api_key_message() -> str:
         "1. export OPENAI_API_KEY=your_key\n"
         "2. export FIELDNOTES_USE_FAKE_LLM=1"
     )
+
+
+def determine_llm_mode() -> str:
+    """Resolve effective LLM mode from current environment."""
+
+    api_key = env_value("OPENAI_API_KEY", DEFAULT_OPENAI_API_KEY).strip()
+    if api_key:
+        return "live"
+    if parse_env_flag(env_value("FIELDNOTES_USE_FAKE_LLM", DEFAULT_USE_FAKE_LLM)):
+        return "fake"
+    return "fake"
+
+
+def apply_startup_llm_mode() -> str:
+    """Apply effective startup LLM mode and emit operator-facing logs."""
+
+    api_key = env_value("OPENAI_API_KEY", DEFAULT_OPENAI_API_KEY).strip()
+    fake_requested = parse_env_flag(env_value("FIELDNOTES_USE_FAKE_LLM", DEFAULT_USE_FAKE_LLM))
+
+    if api_key:
+        os.environ["FIELDNOTES_USE_FAKE_LLM"] = "0"
+        logger.info("OpenAI API detected. Running in live mode.")
+        return "live"
+    if fake_requested:
+        os.environ["FIELDNOTES_USE_FAKE_LLM"] = "1"
+        logger.info("Running in fake LLM mode.")
+        return "fake"
+
+    os.environ["FIELDNOTES_USE_FAKE_LLM"] = "1"
+    logger.warning("No OPENAI_API_KEY detected.")
+    logger.warning("Falling back to fake LLM mode.")
+    logger.warning("Set OPENAI_API_KEY to enable live OpenAI responses.")
+    return "fake"
 
 
 @dataclass(frozen=True)
@@ -216,9 +252,8 @@ def validate_runtime_configuration() -> StartupDiagnostics:
         env_value("FIELDNOTES_MAX_CONTEXT_TOKENS", DEFAULT_MAX_CONTEXT_TOKENS),
     )
 
-    fake_llm = parse_env_flag(env_value("FIELDNOTES_USE_FAKE_LLM", DEFAULT_USE_FAKE_LLM))
-    if not fake_llm and not env_value("OPENAI_API_KEY", DEFAULT_OPENAI_API_KEY).strip():
-        raise ConfigurationError(format_missing_openai_api_key_message())
+    llm_mode = apply_startup_llm_mode()
+    fake_llm = llm_mode == "fake"
 
     startup_checks = {
         "responses_api": "ok" if fake_llm else "configured",

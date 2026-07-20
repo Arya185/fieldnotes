@@ -19,16 +19,15 @@
 
 | Date | Command | Result |
 |---|---|---|
-| 2026-07-20 | `.venv312/bin/python -m unittest discover -s tests` | PASS (57 tests) |
-| 2026-07-20 | `cd frontend && npm test` | PASS (13 tests) |
+| 2026-07-20 | `.venv312/bin/python -m unittest discover -s tests` | PASS |
+| 2026-07-20 | `cd frontend && npm test` | PASS |
 | 2026-07-20 | `cd frontend && npm run build` | PASS |
-| 2026-07-20 | `.venv312/bin/python scripts/exit_phase0.py` | PASS (6 checks) |
+| 2026-07-20 | `.venv312/bin/python scripts/exit_phase0.py` | PASS (7 checks, live probe skipped without credentials) |
 | 2026-07-20 | `.venv312/bin/python scripts/exit_phase1.py` | PASS (10 checks) |
 
 ## Open release work
 
 - Validate `scripts/release_check.py` in a Python environment where npm is discoverable on `PATH`.
 - Complete external beta feedback and platform evidence before declaring a stable `1.0.0` release.
-- Resolve or explicitly accept the Windows sandbox resource-limit limitation recorded in [docs/beta-known-issues.md](docs/beta-known-issues.md).
 
 No completed implementation phase is marked as not started.

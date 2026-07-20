@@ -17,8 +17,8 @@ from fastapi.testclient import TestClient
 
 from backend.agent.llm import LLMClient, ResponsesAPIProbeError, verify_responses_api_connection
 from backend.config import (
-    ConfigurationError,
     DEFAULT_OPENAI_MODEL,
+    determine_llm_mode,
     env_value,
     load_project_dotenv,
     validate_runtime_configuration,
@@ -81,13 +81,11 @@ def verify_fake_mode() -> None:
 
 def verify_live_validation() -> None:
     with temporary_environment({"FIELDNOTES_USE_FAKE_LLM": "0", "OPENAI_API_KEY": None}):
-        try:
-            validate_runtime_configuration()
-        except ConfigurationError as exc:
-            if "Missing OPENAI_API_KEY" in str(exc):
-                return
-            raise
-    raise RuntimeError("Live mode accepted missing OPENAI_API_KEY")
+        diagnostics = validate_runtime_configuration()
+    if diagnostics.startup_checks["responses_api"] != "ok":
+        raise RuntimeError("Missing OPENAI_API_KEY did not fall back to fake mode")
+    if determine_llm_mode() != "fake":
+        raise RuntimeError("Missing OPENAI_API_KEY did not keep application in fake mode")
 
 
 def verify_responses_configuration() -> None:

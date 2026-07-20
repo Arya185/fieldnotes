@@ -1,8 +1,14 @@
 # Fieldnotes Troubleshooting
 
-## `OPENAI_API_KEY is required unless FIELDNOTES_USE_FAKE_LLM=1`
+## Startup mode looks wrong
 
-Set `OPENAI_API_KEY` in the project-root `.env` for live mode, or set `FIELDNOTES_USE_FAKE_LLM=1` for offline smoke and CI. Existing shell variables override `.env` values.
+Startup mode priority is:
+
+1. `OPENAI_API_KEY`
+2. `FIELDNOTES_USE_FAKE_LLM=1`
+3. automatic fallback to fake mode
+
+If `OPENAI_API_KEY` is absent, startup does not fail. Backend logs warning and falls back to fake mode. Existing shell variables still override project-root `.env`.
 
 ## `Unknown FIELDNOTES_RETRIEVAL_PROVIDER`
 

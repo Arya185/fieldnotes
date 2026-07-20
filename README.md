@@ -61,7 +61,9 @@ OPENAI_API_KEY=your_key
 OPENAI_MODEL=gpt-5
 ```
 
-Optional fake mode in `.env`:
+No API key required for local startup. If `OPENAI_API_KEY` is absent, Fieldnotes starts automatically in fake LLM mode. If `OPENAI_API_KEY` is present, Fieldnotes starts automatically in live OpenAI mode. No manual mode switch required.
+
+Optional explicit fake-mode override in `.env`:
 
 ```bash
 FIELDNOTES_USE_FAKE_LLM=1

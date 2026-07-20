@@ -2,12 +2,13 @@
 
 ## Required
 
-- `OPENAI_API_KEY`: required for live Responses API mode
+- No LLM credential is required for local startup
 
 ## Optional
 
+- `OPENAI_API_KEY`: enables live Responses API mode automatically when present
 - `OPENAI_MODEL`: defaults to `gpt-5`
-- `FIELDNOTES_USE_FAKE_LLM`: `1` enables deterministic internal LLM stub
+- `FIELDNOTES_USE_FAKE_LLM`: `1` requests deterministic internal LLM stub when no API key is present
 - `FIELDNOTES_RETRIEVAL_PROVIDER`: `bm25 | hybrid | vector`
 - `FIELDNOTES_EMBEDDINGS_PROVIDER`: `deterministic`
 - `FIELDNOTES_EMBEDDING_MODEL`: defaults to `hash-v1`
@@ -32,17 +33,30 @@ Startup validates:
 - Retrieval and embedding provider names
 - Optional live Responses API probe in Phase 0 when `OPENAI_API_KEY` is present
 
-Expected missing-key error in live mode:
-
-```text
-Missing OPENAI_API_KEY.
-
-Either:
-1. set OPENAI_API_KEY=your_key in project-root `.env` (or export it)
-2. set FIELDNOTES_USE_FAKE_LLM=1
-```
-
 The backend loads project-root `.env` before validation. Existing shell variables take precedence over `.env` values.
+
+## Startup mode selection
+
+Priority order:
+
+1. `OPENAI_API_KEY`
+2. `FIELDNOTES_USE_FAKE_LLM=1`
+3. automatic fallback to fake mode
+
+Behavior:
+
+- `OPENAI_API_KEY` present: startup uses live OpenAI mode automatically
+- no API key and `FIELDNOTES_USE_FAKE_LLM=1`: startup uses fake mode
+- no API key and no fake flag: startup still succeeds and falls back to fake mode
+
+Startup logs:
+
+- live mode: `INFO: OpenAI API detected. Running in live mode.`
+- explicit fake mode: `INFO: Running in fake LLM mode.`
+- automatic fallback:
+  - `WARNING: No OPENAI_API_KEY detected.`
+  - `WARNING: Falling back to fake LLM mode.`
+  - `WARNING: Set OPENAI_API_KEY to enable live OpenAI responses.`
 
 ## Workspace registry
 
@@ -70,7 +84,7 @@ The backend loads project-root `.env` before validation. Existing shell variable
 
 Phase 0 includes optional end-to-end live Responses API verification through `scripts/exit_phase0.py`.
 
-- Enabled when `OPENAI_API_KEY` is set and `FIELDNOTES_USE_FAKE_LLM=0`
+- Enabled when `OPENAI_API_KEY` is set
 - Uses configured `OPENAI_MODEL`; no model name is hardcoded in probe
 - Sends one tiny prompt and expects strict JSON `{"status":"ok"}`
 - Expected runtime: usually a few seconds

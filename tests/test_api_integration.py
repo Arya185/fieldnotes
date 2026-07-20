@@ -120,7 +120,7 @@ class ApiIntegrationTests(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def test_lifespan_initializes_runtime_and_preserves_health_contract(self) -> None:
-        with patch.dict(os.environ, {"FIELDNOTES_USE_FAKE_LLM": "1"}):
+        with patch.dict(os.environ, {"FIELDNOTES_USE_FAKE_LLM": "1"}, clear=True):
             with TestClient(app) as client:
                 response = client.get("/health")
                 self.assertEqual(
@@ -133,6 +133,14 @@ class ApiIntegrationTests(unittest.TestCase):
                     },
                 )
                 self.assertEqual(app.state.release_metadata["version"], "1.0.0-beta.1")
+
+    def test_lifespan_without_api_key_falls_back_to_fake_mode(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            with TestClient(app) as client:
+                response = client.get("/health")
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json()["mode"], "fake")
+                self.assertEqual(response.json()["startup"], "healthy")
 
     def test_notebook_invalid_workspace_returns_stable_rest_error(self) -> None:
         response = self.client.get("/notebook", params={"workspace_id": "missing"})

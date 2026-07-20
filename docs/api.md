@@ -15,7 +15,13 @@ Returns startup status.
 {"status":"ok","version":"1.0.0-beta.1","mode":"fake","startup":"healthy"}
 ```
 
-`mode` is `fake` when `FIELDNOTES_USE_FAKE_LLM=1`; otherwise it is `live`.
+`mode` is resolved at startup:
+
+- `live` when `OPENAI_API_KEY` is present
+- `fake` when `FIELDNOTES_USE_FAKE_LLM=1`
+- `fake` when no API key is present and startup falls back automatically
+
+`/health` may also include `registry_warning` and `storage_warning` when automatic recovery occurred during current process lifetime.
 
 ## Indexing
 
@@ -125,4 +131,4 @@ Stable public error codes:
 - `TIMEOUT`
 - `INTERNAL_ERROR`
 
-Unknown workspaces, runs, artifacts, and source anchors use stable error objects rather than raw internal exceptions. Invalid configuration prevents successful startup. In live mode, a missing `OPENAI_API_KEY` is surfaced through the documented configuration contract in [configuration.md](configuration.md).
+Unknown workspaces, runs, artifacts, and source anchors use stable error objects rather than raw internal exceptions. Startup no longer fails when `OPENAI_API_KEY` is absent; runtime falls back to fake mode as documented in [configuration.md](configuration.md).

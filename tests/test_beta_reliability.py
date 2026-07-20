@@ -131,9 +131,36 @@ class BetaReliabilityTests(unittest.TestCase):
             self.assertTrue(loaded)
             self.assertEqual(os.environ["OPENAI_API_KEY"], "shell-key")
 
-    def test_missing_dotenv_keeps_friendly_configuration_error(self) -> None:
+    def test_missing_dotenv_falls_back_to_fake_mode(self) -> None:
         with ExitStack() as stack:
             stack.enter_context(patch.dict(os.environ, {}, clear=True))
+            stack.enter_context(
+                patch.multiple(
+                    backend_config,
+                    _validate_workspace_permissions=lambda: "ok",
+                    _validate_sqlite_write_access=lambda: "ok",
+                        _validate_sandbox_runtime=lambda: "ok",
+                )
+            )
+            loaded = backend_config.load_project_dotenv(self.base / ".env")
+            self.assertFalse(loaded)
+            with self.assertLogs("fieldnotes.startup", level="WARNING") as logs:
+                diagnostics = backend_config.validate_runtime_configuration()
+            self.assertEqual(os.environ["FIELDNOTES_USE_FAKE_LLM"], "1")
+
+        self.assertEqual(diagnostics.startup_checks["responses_api"], "ok")
+        self.assertTrue(any("No OPENAI_API_KEY detected." in line for line in logs.output))
+        self.assertTrue(any("Falling back to fake LLM mode." in line for line in logs.output))
+
+    def test_openai_api_key_takes_precedence_over_fake_flag(self) -> None:
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch.dict(
+                    os.environ,
+                    {"OPENAI_API_KEY": "live-key", "FIELDNOTES_USE_FAKE_LLM": "1"},
+                    clear=True,
+                )
+            )
             stack.enter_context(
                 patch.multiple(
                     backend_config,
@@ -142,12 +169,12 @@ class BetaReliabilityTests(unittest.TestCase):
                     _validate_sandbox_runtime=lambda: "ok",
                 )
             )
-            loaded = backend_config.load_project_dotenv(self.base / ".env")
-            self.assertFalse(loaded)
-            with self.assertRaises(backend_config.ConfigurationError) as exc:
-                backend_config.validate_runtime_configuration()
+            with self.assertLogs("fieldnotes.startup", level="INFO") as logs:
+                diagnostics = backend_config.validate_runtime_configuration()
+            self.assertEqual(os.environ["FIELDNOTES_USE_FAKE_LLM"], "0")
 
-        self.assertEqual(str(exc.exception), backend_config.format_missing_openai_api_key_message())
+        self.assertEqual(diagnostics.startup_checks["responses_api"], "configured")
+        self.assertTrue(any("OpenAI API detected. Running in live mode." in line for line in logs.output))
 
 
 if __name__ == "__main__":
