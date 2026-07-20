@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 os.environ.setdefault("OPENAI_API_KEY", "test-key")
 
@@ -20,6 +22,10 @@ from backend.telemetry.tracing import (
     structured_log,
 )
 from scripts import run_benchmarks as benchmark_module
+
+
+def _successful_command(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+    return subprocess.CompletedProcess(command, 0, "", "")
 
 
 class Phase2ObservabilityTests(unittest.TestCase):
@@ -89,11 +95,15 @@ class Phase2ObservabilityTests(unittest.TestCase):
     def test_benchmark_runner(self) -> None:
         results_path = self.base / "benchmarks.json"
         original_path = benchmark_module.RESULTS_PATH
+        original_release_path = benchmark_module.RELEASE_RESULTS_PATH
         benchmark_module.RESULTS_PATH = results_path
+        benchmark_module.RELEASE_RESULTS_PATH = self.base / "release_benchmarks.json"
         try:
-            result = benchmark_module.run_benchmarks()
+            with patch.object(benchmark_module, "npm_command", return_value=["npm", "run", "build"]):
+                result = benchmark_module.run_benchmarks(command_runner=_successful_command)
         finally:
             benchmark_module.RESULTS_PATH = original_path
+            benchmark_module.RELEASE_RESULTS_PATH = original_release_path
         self.assertIn("latency_summary", result)
         self.assertIn("retrieval_metrics", result)
         self.assertIn("execution_metrics", result)
@@ -115,11 +125,15 @@ class Phase2ObservabilityTests(unittest.TestCase):
 
         results_path = self.base / "fixture_benchmarks.json"
         original_path = benchmark_module.RESULTS_PATH
+        original_release_path = benchmark_module.RELEASE_RESULTS_PATH
         benchmark_module.RESULTS_PATH = results_path
+        benchmark_module.RELEASE_RESULTS_PATH = self.base / "release_benchmarks.json"
         try:
-            result = benchmark_module.run_benchmarks()
+            with patch.object(benchmark_module, "npm_command", return_value=["npm", "run", "build"]):
+                result = benchmark_module.run_benchmarks(command_runner=_successful_command)
         finally:
             benchmark_module.RESULTS_PATH = original_path
+            benchmark_module.RELEASE_RESULTS_PATH = original_release_path
         self.assertEqual(sorted(result.keys()), fixture["benchmark_keys"])
 
 

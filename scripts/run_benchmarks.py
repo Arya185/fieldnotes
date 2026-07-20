@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -37,6 +38,7 @@ from backend.telemetry.tracing import (
     save_benchmark_results,
     structured_log,
 )
+from scripts.subprocess_utils import npm_command
 
 
 RESULTS_PATH = ROOT_DIR / "scripts" / "benchmarks_latest.json"
@@ -54,13 +56,16 @@ def build_csv_workspace(root: Path) -> None:
     (root / "notes.txt").write_text("Trial 2 damping explanation", encoding="utf-8")
 
 
-def run_benchmarks() -> dict:
+def run_benchmarks(
+    *,
+    command_runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> dict:
     previous = load_benchmark_results(RESULTS_PATH)
     metrics_registry.values.clear()
     RELEASE_ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     frontend_started = time.perf_counter()
-    frontend_build = subprocess.run(
-        ["npm", "run", "build"],
+    frontend_build = command_runner(
+        npm_command("run", "build"),
         cwd=FRONTEND_DIR,
         capture_output=True,
         text=True,

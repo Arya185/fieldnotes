@@ -16,6 +16,8 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+from scripts.subprocess_utils import npm_command
+
 BACKEND_PORT = 8765
 RELEASE_ARTIFACTS_DIR = ROOT_DIR / "scripts" / "release_artifacts"
 
@@ -114,7 +116,7 @@ def main() -> int:
         results.append(("health endpoint responds", True, health_payload["version"]))
 
         frontend_build = subprocess.run(
-            ["npm", "run", "build"],
+            npm_command("run", "build"),
             cwd=ROOT_DIR / "frontend",
             capture_output=True,
             text=True,
@@ -213,7 +215,7 @@ def main() -> int:
             results.append(("source viewer opens", True, source["label"]))
 
         benchmark_run = subprocess.run(
-            [sys.executable, "scripts/run_benchmarks.py"],
+            [sys.executable, str(ROOT_DIR / "scripts" / "run_benchmarks.py")],
             cwd=ROOT_DIR,
             capture_output=True,
             text=True,
