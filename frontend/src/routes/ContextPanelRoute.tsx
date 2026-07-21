@@ -75,10 +75,31 @@ export function ContextPanelRoute({
               <span className="eyebrow">Context</span>
               <strong>Panel</strong>
             </div>
-            <div className="context-rail-tabs" aria-hidden="true">
-              <span className="context-rail-pill">S</span>
-              <span className="context-rail-pill">N</span>
-              <span className="context-rail-pill">Q</span>
+            <div className="context-rail-tabs">
+              <button
+                className="context-rail-pill"
+                onClick={() => {
+                  onSetContextTab("sources");
+                }}
+              >
+                Sources
+              </button>
+              <button
+                className="context-rail-pill"
+                onClick={() => {
+                  onSetContextTab("notebook");
+                }}
+              >
+                Notebook
+              </button>
+              <button
+                className="context-rail-pill"
+                onClick={() => {
+                  onSetContextTab("quiz");
+                }}
+              >
+                Quiz
+              </button>
             </div>
           </div>
         )}
