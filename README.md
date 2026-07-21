@@ -7,13 +7,12 @@ This is for night-before-exam moment when one formula or definition is buried ac
 
 ## Demo
 
-![Empty state screenshot placeholder](docs/images/screenshot-empty-state.png)
-
-![Chat view with citation screenshot placeholder](docs/images/screenshot-chat.png)
-
-![Quiz view screenshot placeholder](docs/images/screenshot-quiz.png)
-
-![Developer diagnostics panel screenshot placeholder](docs/images/screenshot-developer-diagnostics.png)
+| Page | Screenshot |
+|------|------------|
+| Dashboard | ![Empty state screenshot](docs/images/screenshot-empty-state.png) |
+| Chat | ![Chat view with citations](docs/images/screenshot-chat.png) |
+| Quiz | ![Quiz view](docs/images/screenshot-quiz.png) |
+| Developer Diagnostics | ![Developer diagnostics panel](docs/images/screenshot-developer-diagnostics.png) |
 
 ```mermaid
 flowchart TD
