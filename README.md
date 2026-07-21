@@ -12,6 +12,18 @@ This is for night-before-exam moment when one formula or definition is buried ac
 | Quiz generation | Quizzes grounded in your own indexed course material | Practice questions may not stay tied to your actual files |
 | Data handling | Local-first workflow; files stay in workspace unless you choose live API mode | Often starts by uploading or pasting material into chat |
 
+---
+
+## Live Demo
+
+Try the deployed application:
+
+**https://fieldnotes-vwp2.onrender.com**
+
+> **Note:** This app is hosted on Render's free tier. If the service has been idle, the backend may take up to 30 seconds to wake up before responding to the first request.
+
+---
+
 ## Demo
 
 | Page | Screenshot |
