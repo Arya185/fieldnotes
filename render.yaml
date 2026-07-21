@@ -8,14 +8,14 @@ services:
     healthCheckPath: /health
     autoDeployTrigger: commit
     envVars:
-      - key: FIELDNOTES_USE_FAKE_LLM
-        value: "1"
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENAI_MODEL
-        value: gpt-5
+        value: openai/gpt-oss-120b
       - key: OPENAI_BASE_URL
-        value: ""
+        value: https://integrate.api.nvidia.com/v1
+      - key: FIELDNOTES_USE_FAKE_LLM
+        value: "0"
       - key: OPENBLAS_NUM_THREADS
         value: "1"
       - key: OMP_NUM_THREADS

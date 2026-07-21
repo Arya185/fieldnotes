@@ -204,7 +204,18 @@ export function installAppFetchMock() {
       });
     }
     if (url.endsWith("/health")) {
-      return makeJsonResponse({ status: "ok", mode: "fake", version: "1.0.0-beta.1" });
+      return makeJsonResponse({
+        status: "ok",
+        version: "1.0.0-beta.1",
+        mode: "fake",
+        llm_mode: "fake",
+        client: "FakeLLMClient",
+        provider: "Fieldnotes fake runtime",
+        model: "fake-llm",
+        base_url: "",
+        transport: "fake",
+        startup: "healthy",
+      });
     }
     return new Response("not found", { status: 404 });
   }) as typeof fetch;

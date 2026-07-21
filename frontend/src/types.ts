@@ -295,5 +295,27 @@ export interface HealthResponse {
   status: string;
   version: string;
   mode: "live" | "fake";
+  llm_mode: "live" | "fake";
+  client: string;
+  provider: string;
+  model: string;
+  base_url: string;
+  transport: string;
   startup: string;
+  probe_response_id?: string;
+  last_request?: {
+    endpoint: string;
+    started_at: string;
+    first_token_at: string | null;
+    completed_at: string | null;
+    ttft_ms: number | null;
+    latency_ms: number | null;
+    chunk_count: number;
+    token_count_estimate: number;
+    tokens_per_second: number | null;
+    memory_rss_mb: number | null;
+    gpu: string;
+  };
+  registry_warning?: string;
+  storage_warning?: string;
 }

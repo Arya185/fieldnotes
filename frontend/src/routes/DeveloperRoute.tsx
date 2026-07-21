@@ -1,10 +1,11 @@
 import type { ChatMessage } from "../lib/appState/types";
-import type { BenchmarkSummary } from "../types";
+import type { BenchmarkSummary, HealthResponse } from "../types";
 
 interface DeveloperRouteProps {
   chatMessages: ChatMessage[];
   developerChunks: Array<{ label: string; chunk: string }>;
   developerSummary: BenchmarkSummary | null;
+  healthDiagnostics: HealthResponse | null;
   onBenchmarkImport: (file: File | null) => void;
 }
 
@@ -12,6 +13,7 @@ export function DeveloperRoute({
   chatMessages,
   developerChunks,
   developerSummary,
+  healthDiagnostics,
   onBenchmarkImport,
 }: DeveloperRouteProps) {
   return (
@@ -62,6 +64,28 @@ export function DeveloperRoute({
 
       <article className="dev-card">
         <strong>Observability</strong>
+        <div className="history-card">
+          <strong>Runtime LLM</strong>
+          {healthDiagnostics ? (
+            <div className="stack">
+              <div><strong>Current Provider</strong>: {healthDiagnostics.provider}</div>
+              <div><strong>Current Model</strong>: {healthDiagnostics.model}</div>
+              <div><strong>Base URL</strong>: {healthDiagnostics.base_url || "n/a"}</div>
+              <div><strong>Transport</strong>: {healthDiagnostics.transport}</div>
+              <div><strong>Live/Fake mode</strong>: {healthDiagnostics.llm_mode}</div>
+              <div><strong>Current API endpoint</strong>: {healthDiagnostics.last_request?.endpoint ?? "n/a"}</div>
+              <div><strong>Last request latency</strong>: {healthDiagnostics.last_request?.latency_ms?.toFixed(2) ?? "n/a"} ms</div>
+              <div><strong>Last TTFT</strong>: {healthDiagnostics.last_request?.ttft_ms?.toFixed(2) ?? "n/a"} ms</div>
+              <div><strong>Number of streamed chunks</strong>: {healthDiagnostics.last_request?.chunk_count ?? 0}</div>
+              <div><strong>Tokens/sec</strong>: {healthDiagnostics.last_request?.tokens_per_second?.toFixed(2) ?? "n/a"}</div>
+              <div><strong>Memory</strong>: {healthDiagnostics.last_request?.memory_rss_mb?.toFixed(2) ?? "n/a"} MB</div>
+              <div><strong>GPU</strong>: {healthDiagnostics.last_request?.gpu ?? "n/a"}</div>
+              {healthDiagnostics.probe_response_id && <div><strong>Startup probe</strong>: {healthDiagnostics.probe_response_id}</div>}
+            </div>
+          ) : (
+            <p className="muted">Backend health unavailable.</p>
+          )}
+        </div>
         {developerSummary ? (
           <div className="stack">
             <div className="table-wrap">

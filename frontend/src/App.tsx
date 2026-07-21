@@ -203,6 +203,7 @@ export default function App() {
               chatMessages={app.chatMessages}
               developerChunks={app.developerChunks}
               developerSummary={app.developerSummary}
+              healthDiagnostics={app.healthDiagnostics}
               onBenchmarkImport={app.handleBenchmarkImport}
             />
           )}

@@ -31,6 +31,7 @@ from backend.storage import (
     upsert_concept_updates,
     validate_citation_anchors,
 )
+from backend.telemetry.tracing import request_metrics_tracker
 
 from .retrieval import load_fallback_retrieval, source_label
 
@@ -43,6 +44,7 @@ async def stream_ask_events(
 ) -> AsyncIterator[str]:
     answer_id = f"answer_{uuid4()}"
     request_id = request_id_for(http_request)
+    request_metrics = request_metrics_tracker.begin("/ask")
     try:
         workspace_record = workspace_manager.get(request.workspace_id)
         if workspace_record is None:
@@ -329,6 +331,7 @@ async def stream_ask_events(
             execution_context=execution_context,
         ):
             if delta:
+                request_metrics.observe_chunk(delta)
                 answer_chunks.append(delta)
                 yield sse(
                     TokenEvent(
@@ -428,7 +431,9 @@ async def stream_ask_events(
                 ).model_dump()
             )
         yield sse(DoneEvent(event="done", answer_id=answer_id).model_dump())
+        request_metrics.complete()
     except Exception as exc:
+        request_metrics.complete()
         yield sse(
             sse_error_payload(
                 exc=exc,

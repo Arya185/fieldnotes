@@ -69,9 +69,9 @@ DEFAULT_ENABLE_TRACING = "0"
 DEFAULT_ENABLE_METRICS = "1"
 DEFAULT_VERBOSE_TRACING = "0"
 DEFAULT_USE_FAKE_LLM = "0"
-DEFAULT_OPENAI_MODEL = "gpt-5"
+DEFAULT_OPENAI_MODEL = "openai/gpt-oss-120b"
 DEFAULT_OPENAI_API_KEY = ""
-DEFAULT_OPENAI_BASE_URL = ""
+DEFAULT_OPENAI_BASE_URL = "https://integrate.api.nvidia.com/v1"
 DEFAULT_TRUSTED_ORIGINS = (
     "http://localhost:5173,"
     "http://127.0.0.1:5173,"
@@ -115,43 +115,34 @@ def format_missing_openai_api_key_message() -> str:
 
     return (
         "Missing OPENAI_API_KEY.\n\n"
-        "Either:\n"
-        "1. export OPENAI_API_KEY=your_key\n"
-        "2. export FIELDNOTES_USE_FAKE_LLM=1"
+        "Set NVIDIA NIM credentials before startup:\n"
+        "1. export OPENAI_API_KEY=your_nvidia_key\n"
+        "2. export OPENAI_BASE_URL=https://integrate.api.nvidia.com/v1\n"
+        "3. export OPENAI_MODEL=openai/gpt-oss-120b"
     )
 
 
 def determine_llm_mode() -> str:
     """Resolve effective LLM mode from current environment."""
 
-    api_key = env_value("OPENAI_API_KEY", DEFAULT_OPENAI_API_KEY).strip()
-    if api_key:
-        return "live"
     if parse_env_flag(env_value("FIELDNOTES_USE_FAKE_LLM", DEFAULT_USE_FAKE_LLM)):
         return "fake"
-    return "fake"
+    if _has_live_llm_configuration():
+        return "live"
+    return "invalid"
 
 
 def apply_startup_llm_mode() -> str:
     """Apply effective startup LLM mode and emit operator-facing logs."""
 
-    api_key = env_value("OPENAI_API_KEY", DEFAULT_OPENAI_API_KEY).strip()
-    fake_requested = parse_env_flag(env_value("FIELDNOTES_USE_FAKE_LLM", DEFAULT_USE_FAKE_LLM))
-
-    if api_key:
-        os.environ["FIELDNOTES_USE_FAKE_LLM"] = "0"
-        logger.info("OpenAI API detected. Running in live mode.")
-        return "live"
-    if fake_requested:
+    if parse_env_flag(env_value("FIELDNOTES_USE_FAKE_LLM", DEFAULT_USE_FAKE_LLM)):
         os.environ["FIELDNOTES_USE_FAKE_LLM"] = "1"
-        logger.info("Running in fake LLM mode.")
+        logger.warning("Running in explicit fake LLM mode.")
         return "fake"
-
-    os.environ["FIELDNOTES_USE_FAKE_LLM"] = "1"
-    logger.warning("No OPENAI_API_KEY detected.")
-    logger.warning("Falling back to fake LLM mode.")
-    logger.warning("Set OPENAI_API_KEY to enable live OpenAI responses.")
-    return "fake"
+    os.environ["FIELDNOTES_USE_FAKE_LLM"] = "0"
+    _validate_live_llm_configuration()
+    logger.info("OpenAI-compatible API detected. Running in live mode.")
+    return "live"
 
 
 @dataclass(frozen=True)
@@ -167,6 +158,13 @@ class StartupDiagnostics:
     max_retrieval_candidates: int
     max_context_chunks: int
     max_context_tokens: int
+    llm_mode: str
+    llm_client: str
+    llm_provider: str
+    llm_model: str
+    llm_base_url: str
+    llm_transport: str
+    llm_probe_response_id: str | None
     startup_checks: dict[str, str]
 
 
@@ -237,6 +235,40 @@ def env_value(name: str, default: str) -> str:
     return os.environ.get(name, default)
 
 
+def normalize_configured_value(value: str) -> str:
+    """Treat blank and template placeholders as unset."""
+
+    normalized = value.strip()
+    if not normalized:
+        return ""
+    if normalized.startswith("<") and normalized.endswith(">"):
+        return ""
+    return normalized
+
+
+def _has_live_llm_configuration() -> bool:
+    return all(
+        (
+            normalize_configured_value(env_value("OPENAI_API_KEY", DEFAULT_OPENAI_API_KEY)),
+            normalize_configured_value(env_value("OPENAI_BASE_URL", DEFAULT_OPENAI_BASE_URL)),
+            normalize_configured_value(env_value("OPENAI_MODEL", DEFAULT_OPENAI_MODEL)),
+        )
+    )
+
+
+def _validate_live_llm_configuration() -> None:
+    api_key = normalize_configured_value(env_value("OPENAI_API_KEY", DEFAULT_OPENAI_API_KEY))
+    base_url = normalize_configured_value(env_value("OPENAI_BASE_URL", DEFAULT_OPENAI_BASE_URL))
+    model = normalize_configured_value(env_value("OPENAI_MODEL", DEFAULT_OPENAI_MODEL))
+
+    if not api_key:
+        raise ConfigurationError(format_missing_openai_api_key_message())
+    if not base_url:
+        raise ConfigurationError("OPENAI_BASE_URL must be set for live NVIDIA runtime.")
+    if not model:
+        raise ConfigurationError("OPENAI_MODEL must be set for live NVIDIA runtime.")
+
+
 def validate_runtime_configuration() -> StartupDiagnostics:
     """Validate startup configuration and local runtime prerequisites."""
 
@@ -272,9 +304,29 @@ def validate_runtime_configuration() -> StartupDiagnostics:
 
     llm_mode = apply_startup_llm_mode()
     fake_llm = llm_mode == "fake"
+    llm_model = normalize_configured_value(env_value("OPENAI_MODEL", DEFAULT_OPENAI_MODEL))
+    llm_base_url = normalize_configured_value(env_value("OPENAI_BASE_URL", DEFAULT_OPENAI_BASE_URL))
+    llm_transport = "responses" if not llm_base_url else "chat_completions"
+    llm_probe_response_id: str | None = None
+
+    responses_api_check = "explicit_fake" if fake_llm else "configured"
+    if not fake_llm:
+        from backend.agent.llm import verify_responses_api_connection
+
+        try:
+            probe = verify_responses_api_connection(
+                model=llm_model,
+                api_key=normalize_configured_value(env_value("OPENAI_API_KEY", DEFAULT_OPENAI_API_KEY)),
+                base_url=llm_base_url,
+                timeout_seconds=10.0,
+            )
+        except Exception as exc:
+            raise ConfigurationError(str(exc)) from exc
+        responses_api_check = "ok"
+        llm_probe_response_id = probe.response_id
 
     startup_checks = {
-        "responses_api": "ok" if fake_llm else "configured",
+        "responses_api": responses_api_check,
         "workspace_permissions": _validate_workspace_permissions(),
         "sqlite_write_access": _validate_sqlite_write_access(),
         "sandbox": _validate_sandbox_runtime(),
@@ -292,6 +344,13 @@ def validate_runtime_configuration() -> StartupDiagnostics:
         max_retrieval_candidates=max_retrieval_candidates,
         max_context_chunks=max_context_chunks,
         max_context_tokens=max_context_tokens,
+        llm_mode=llm_mode,
+        llm_client="FakeLLMClient" if fake_llm else "OpenAI",
+        llm_provider="Fieldnotes fake runtime" if fake_llm else "NVIDIA",
+        llm_model=llm_model or "fake-llm",
+        llm_base_url=llm_base_url,
+        llm_transport="fake" if fake_llm else llm_transport,
+        llm_probe_response_id=llm_probe_response_id,
         startup_checks=startup_checks,
     )
 

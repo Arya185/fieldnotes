@@ -4,7 +4,10 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
-      FIELDNOTES_USE_FAKE_LLM: "1"
+      FIELDNOTES_USE_FAKE_LLM: "0"
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-<NVIDIA_API_KEY>}
+      OPENAI_BASE_URL: https://integrate.api.nvidia.com/v1
+      OPENAI_MODEL: openai/gpt-oss-120b
       OPENBLAS_NUM_THREADS: "1"
       OMP_NUM_THREADS: "1"
       MKL_NUM_THREADS: "1"

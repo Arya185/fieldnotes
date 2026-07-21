@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sqlite3
 import tempfile
 import unittest
@@ -28,9 +29,12 @@ class WorkspaceStorageRecoveryTests(unittest.TestCase):
         self.workspace = self.base / "workspace"
         self.workspace.mkdir()
         self.db_path = self.workspace / ".fieldnotes" / "fieldnotes.db"
+        self.env_patcher = patch.dict(os.environ, {"FIELDNOTES_USE_FAKE_LLM": "1"}, clear=True)
+        self.env_patcher.start()
         self.client = TestClient(app)
 
     def tearDown(self) -> None:
+        self.env_patcher.stop()
         clear_storage_warning(self.db_path)
         self.temp_dir.cleanup()
 

@@ -115,33 +115,32 @@ class ApiIntegrationTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
         self.base = Path(self.temp_dir.name)
+        self.env_patcher = patch.dict(os.environ, {"FIELDNOTES_USE_FAKE_LLM": "1"}, clear=True)
+        self.env_patcher.start()
         self.client = TestClient(app)
 
     def tearDown(self) -> None:
+        self.env_patcher.stop()
         self.temp_dir.cleanup()
 
     def test_lifespan_initializes_runtime_and_preserves_health_contract(self) -> None:
         with patch.dict(os.environ, {"FIELDNOTES_USE_FAKE_LLM": "1"}, clear=True):
             with TestClient(app) as client:
                 response = client.get("/health")
-                self.assertEqual(
-                    response.json(),
-                    {
-                        "status": "ok",
-                        "version": "1.0.0-beta.1",
-                        "mode": "fake",
-                        "startup": "healthy",
-                    },
-                )
+                body = response.json()
+                self.assertEqual(body["status"], "ok")
+                self.assertEqual(body["version"], "1.0.0-beta.1")
+                self.assertEqual(body["mode"], "fake")
+                self.assertEqual(body["llm_mode"], "fake")
+                self.assertEqual(body["client"], "FakeLLMClient")
+                self.assertEqual(body["startup"], "healthy")
                 self.assertEqual(app.state.release_metadata["version"], "1.0.0-beta.1")
 
-    def test_lifespan_without_api_key_falls_back_to_fake_mode(self) -> None:
+    def test_lifespan_without_api_key_fails_startup(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
-            with TestClient(app) as client:
-                response = client.get("/health")
-                self.assertEqual(response.status_code, 200)
-                self.assertEqual(response.json()["mode"], "fake")
-                self.assertEqual(response.json()["startup"], "healthy")
+            with self.assertRaises(RuntimeError):
+                with TestClient(app):
+                    pass
 
     def test_notebook_invalid_workspace_returns_stable_rest_error(self) -> None:
         response = self.client.get("/notebook", params={"workspace_id": "missing"})

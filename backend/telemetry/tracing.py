@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import re
+import resource
 import time
 from collections import defaultdict
 from contextlib import contextmanager
@@ -109,6 +111,83 @@ class MetricsRegistry:
 
 
 @dataclass(frozen=True)
+class RequestMetricsSnapshot:
+    endpoint: str
+    started_at: str
+    first_token_at: str | None
+    completed_at: str | None
+    ttft_ms: float | None
+    latency_ms: float | None
+    chunk_count: int
+    token_count_estimate: int
+    tokens_per_second: float | None
+    memory_rss_mb: float | None
+    gpu: str
+
+
+@dataclass
+class RequestMetricsTracker:
+    last_request: RequestMetricsSnapshot | None = None
+
+    def begin(self, endpoint: str) -> "RequestMetricsSession":
+        return RequestMetricsSession(tracker=self, endpoint=endpoint)
+
+
+@dataclass
+class RequestMetricsSession:
+    tracker: RequestMetricsTracker
+    endpoint: str
+    started_at: str = field(default_factory=lambda: utc_now_iso())
+    started_perf: float = field(default_factory=time.perf_counter)
+    first_token_perf: float | None = None
+    first_token_at: str | None = None
+    chunk_count: int = 0
+    token_count_estimate: int = 0
+
+    def observe_chunk(self, text: str) -> None:
+        if self.first_token_perf is None:
+            self.first_token_perf = time.perf_counter()
+            self.first_token_at = utc_now_iso()
+        self.chunk_count += 1
+        self.token_count_estimate += len(re.findall(r"\S+", text))
+
+    def complete(self) -> None:
+        finished_perf = time.perf_counter()
+        latency_ms = (finished_perf - self.started_perf) * 1000
+        ttft_ms = None
+        if self.first_token_perf is not None:
+            ttft_ms = (self.first_token_perf - self.started_perf) * 1000
+        tokens_per_second = None
+        if self.first_token_perf is not None and self.token_count_estimate > 0:
+            generation_seconds = max(finished_perf - self.first_token_perf, 1e-6)
+            tokens_per_second = self.token_count_estimate / generation_seconds
+        self.tracker.last_request = RequestMetricsSnapshot(
+            endpoint=self.endpoint,
+            started_at=self.started_at,
+            first_token_at=self.first_token_at,
+            completed_at=utc_now_iso(),
+            ttft_ms=ttft_ms,
+            latency_ms=latency_ms,
+            chunk_count=self.chunk_count,
+            token_count_estimate=self.token_count_estimate,
+            tokens_per_second=tokens_per_second,
+            memory_rss_mb=_memory_rss_mb(),
+            gpu="unavailable",
+        )
+
+
+def _memory_rss_mb() -> float | None:
+    try:
+        usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    except Exception:
+        return None
+    if usage <= 0:
+        return None
+    # macOS reports bytes, Linux kilobytes.
+    return usage / (1024 * 1024) if usage > 10_000_000 else usage / 1024
+
+
+@dataclass(frozen=True)
 class LogContext:
     workspace_id: str | None = None
     run_id: str | None = None
@@ -170,3 +249,4 @@ def _compact_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
 
 trace_collector = TraceCollector()
 metrics_registry = MetricsRegistry()
+request_metrics_tracker = RequestMetricsTracker()

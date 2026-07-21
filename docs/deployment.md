@@ -22,15 +22,12 @@ Backend-only `Dockerfile` stays available. It now also copies `demo_course/` and
 
 ## Environment variables
 
-Required for public fake-mode demo:
-
-- `FIELDNOTES_USE_FAKE_LLM=1`
-
-Optional for live OpenAI mode:
+Required for live NVIDIA deployment:
 
 - `OPENAI_API_KEY`
-- `OPENAI_MODEL` default `gpt-5`
-- `OPENAI_BASE_URL` empty for native OpenAI Responses API; set only for OpenAI-compatible endpoint overrides
+- `OPENAI_MODEL=openai/gpt-oss-120b`
+- `OPENAI_BASE_URL=https://integrate.api.nvidia.com/v1`
+- `FIELDNOTES_USE_FAKE_LLM=0`
 
 Recommended low-cost thread caps:
 
@@ -41,16 +38,15 @@ Recommended low-cost thread caps:
 
 Mode behavior:
 
-- if `OPENAI_API_KEY` is absent, startup falls back to fake mode automatically
-- if `OPENAI_API_KEY` is present, startup switches to live mode automatically
-- `render.yaml` sets fake mode by default, so public redeploys stay cheap unless key is added
+- startup fails immediately when live NVIDIA credentials or model config are missing
+- explicit fake mode remains test-only and must be requested with `FIELDNOTES_USE_FAKE_LLM=1`
 
 ## First deploy on Render
 
 1. Push branch with `Dockerfile.render`, `render.yaml`, and docs updates.
 2. In Render, create new Blueprint from repository root.
 3. Confirm service from `render.yaml` and deploy.
-4. Leave `OPENAI_API_KEY` unset for default fake-mode public demo, or add it as secret before deploy if live mode needed.
+4. Add `OPENAI_API_KEY` secret before deploy.
 5. Wait for Render health check on `/health` to pass.
 6. Open public URL. Sidebar should already show `/app/demo_course`.
 7. Click `Index Workspace`.
@@ -90,7 +86,7 @@ Then open `http://127.0.0.1:10000` and confirm:
 - frontend loads
 - `GET /health` returns healthy payload
 - workspace input defaults to `/app/demo_course`
-- indexing and ask flow work in fake mode without `OPENAI_API_KEY`
+- indexing and ask flow work in live mode with NVIDIA credentials present
 
 ## Scope warning
 

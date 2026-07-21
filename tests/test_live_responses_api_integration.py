@@ -9,7 +9,7 @@ from backend.agent.llm import (
     ResponsesAPIProbeError,
     verify_responses_api_connection,
 )
-from backend.config import DEFAULT_OPENAI_MODEL, env_value
+from backend.config import DEFAULT_OPENAI_MODEL, env_value, normalize_configured_value
 
 try:
     from openai import APITimeoutError, AuthenticationError
@@ -18,7 +18,7 @@ except Exception:  # pragma: no cover - dependency availability varies by env
 
 
 class LiveResponsesAPIIntegrationTests(unittest.TestCase):
-    @unittest.skipUnless(os.environ.get("OPENAI_API_KEY", "").strip(), "OPENAI_API_KEY not set")
+    @unittest.skipUnless(normalize_configured_value(os.environ.get("OPENAI_API_KEY", "")), "OPENAI_API_KEY not set")
     def test_live_responses_api_request_succeeds(self) -> None:
         model = env_value("OPENAI_MODEL", DEFAULT_OPENAI_MODEL).strip()
         result = verify_responses_api_connection(
@@ -37,7 +37,7 @@ class LiveResponsesAPIIntegrationTests(unittest.TestCase):
     @unittest.skipIf(AuthenticationError is None, "openai package not installed")
     def test_invalid_api_key_error_is_user_friendly(self) -> None:
         fake_client = Mock()
-        fake_client.responses.create.side_effect = AuthenticationError(
+        fake_client.chat.completions.create.side_effect = AuthenticationError(
             message="bad key",
             response=Mock(request=Mock()),
             body=None,
@@ -49,7 +49,7 @@ class LiveResponsesAPIIntegrationTests(unittest.TestCase):
     @unittest.skipIf(APITimeoutError is None, "openai package not installed")
     def test_timeout_error_is_user_friendly(self) -> None:
         fake_client = Mock()
-        fake_client.responses.create.side_effect = APITimeoutError(request=Mock())
+        fake_client.chat.completions.create.side_effect = APITimeoutError(request=Mock())
 
         with self.assertRaisesRegex(ResponsesAPIProbeError, "timed out"):
             verify_responses_api_connection(model="gpt-live", client=fake_client, timeout_seconds=0.01)

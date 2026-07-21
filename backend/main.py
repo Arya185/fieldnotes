@@ -46,6 +46,7 @@ from backend.storage import (
     load_workspace_counts,
 )
 from backend.release import FakeLLMClient
+from backend.telemetry.tracing import request_metrics_tracker
 
 
 @asynccontextmanager
@@ -110,7 +111,7 @@ async def generic_exception_handler(request: Request, exc: Exception) -> JSONRes
 
 
 @app.get("/health")
-async def get_health(manager: WorkspaceManager = Depends(get_workspace_manager)) -> dict[str, str]:
+async def get_health(manager: WorkspaceManager = Depends(get_workspace_manager)) -> dict[str, object]:
     diagnostics = getattr(app.state, "diagnostics", None)
     mode = determine_llm_mode()
     version = diagnostics.version if diagnostics is not None else FIELDNOTES_VERSION
@@ -118,8 +119,30 @@ async def get_health(manager: WorkspaceManager = Depends(get_workspace_manager))
         "status": "ok",
         "version": version,
         "mode": mode,
+        "llm_mode": diagnostics.llm_mode if diagnostics is not None else mode,
+        "client": diagnostics.llm_client if diagnostics is not None else "unknown",
+        "provider": diagnostics.llm_provider if diagnostics is not None else "unknown",
+        "model": diagnostics.llm_model if diagnostics is not None else "",
+        "base_url": diagnostics.llm_base_url if diagnostics is not None else "",
+        "transport": diagnostics.llm_transport if diagnostics is not None else "",
         "startup": "healthy",
     }
+    if diagnostics is not None and diagnostics.llm_probe_response_id:
+        payload["probe_response_id"] = diagnostics.llm_probe_response_id
+    if request_metrics_tracker.last_request is not None:
+        payload["last_request"] = {
+            "endpoint": request_metrics_tracker.last_request.endpoint,
+            "started_at": request_metrics_tracker.last_request.started_at,
+            "first_token_at": request_metrics_tracker.last_request.first_token_at,
+            "completed_at": request_metrics_tracker.last_request.completed_at,
+            "ttft_ms": request_metrics_tracker.last_request.ttft_ms,
+            "latency_ms": request_metrics_tracker.last_request.latency_ms,
+            "chunk_count": request_metrics_tracker.last_request.chunk_count,
+            "token_count_estimate": request_metrics_tracker.last_request.token_count_estimate,
+            "tokens_per_second": request_metrics_tracker.last_request.tokens_per_second,
+            "memory_rss_mb": request_metrics_tracker.last_request.memory_rss_mb,
+            "gpu": request_metrics_tracker.last_request.gpu,
+        }
     registry_warning = manager.last_recovery_warning()
     if registry_warning:
         payload["registry_warning"] = registry_warning
@@ -284,10 +307,7 @@ def _sse(payload: dict) -> str:
 def _get_llm_client():
     global llm_client
     if llm_client is None:
-        if determine_llm_mode() == "fake":
-            llm_client = FakeLLMClient()
-        else:
-            llm_client = LLMClient()
+        llm_client = FakeLLMClient() if determine_llm_mode() == "fake" else LLMClient()
     return llm_client
 
 

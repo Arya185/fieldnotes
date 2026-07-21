@@ -222,6 +222,12 @@ def _health_payload() -> dict[str, str]:
         "status": "ok",
         "version": release_check.expected_version(),
         "mode": "fake",
+        "llm_mode": "fake",
+        "client": "FakeLLMClient",
+        "provider": "Fieldnotes fake runtime",
+        "model": "fake-llm",
+        "base_url": "",
+        "transport": "fake",
         "startup": "healthy",
     }
 

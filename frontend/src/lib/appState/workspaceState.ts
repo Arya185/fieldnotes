@@ -13,7 +13,7 @@ import {
   type StoredWorkspaceRecord,
 } from "../storage";
 import { useIndexStream } from "../useIndexStream";
-import type { ArtifactCard, BenchmarkSummary, IndexEvent, NotebookResponse } from "../../types";
+import type { ArtifactCard, BenchmarkSummary, HealthResponse, IndexEvent, NotebookResponse } from "../../types";
 import type { ArtifactPreview, ContextTab, NoteOverrides, RouteKey, SourceViewState } from "./types";
 
 const PINNED_ARTIFACTS_KEY = "fieldnotes.pinnedArtifacts";
@@ -152,6 +152,7 @@ export function useWorkspaceState({
   const [developerSummary, setDeveloperSummary] = useState<BenchmarkSummary | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [runtimeMode, setRuntimeMode] = useState<"live" | "fake" | null>(null);
+  const [healthDiagnostics, setHealthDiagnostics] = useState<HealthResponse | null>(null);
   const [sourceSearch, setSourceSearch] = useState("");
   const [sourcePanelExpanded, setSourcePanelExpanded] = useState(true);
   const [recoveryMessage, setRecoveryMessage] = useState<string | null>(null);
@@ -207,9 +208,31 @@ export function useWorkspaceState({
   }, [activeWorkspaceId, setErrorMessage]);
 
   useEffect(() => {
-    void getHealth()
-      .then((health) => setRuntimeMode(health.mode))
-      .catch(() => setRuntimeMode(null));
+    let cancelled = false;
+
+    const refreshHealth = () =>
+      void getHealth()
+        .then((health) => {
+          if (cancelled) {
+            return;
+          }
+          setHealthDiagnostics(health);
+          setRuntimeMode(health.llm_mode);
+        })
+        .catch(() => {
+          if (cancelled) {
+            return;
+          }
+          setHealthDiagnostics(null);
+          setRuntimeMode(null);
+        });
+
+    refreshHealth();
+    const intervalId = window.setInterval(refreshHealth, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
   }, []);
 
   const deferredArtifactSearch = useDeferredValue(artifactSearch);
@@ -638,6 +661,7 @@ export function useWorkspaceState({
     dragActive,
     setDragActive,
     runtimeMode,
+    healthDiagnostics,
     sourceSearch,
     setSourceSearch,
     sourcePanelExpanded,

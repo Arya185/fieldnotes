@@ -251,6 +251,7 @@ export function useFieldnotesApp(composerRef: RefObject<HTMLTextAreaElement | nu
     dragActive: workspace.dragActive,
     setDragActive: workspace.setDragActive,
     runtimeMode: workspace.runtimeMode,
+    healthDiagnostics: workspace.healthDiagnostics,
     sourceSearch: workspace.sourceSearch,
     setSourceSearch: workspace.setSourceSearch,
     sourcePanelExpanded: workspace.sourcePanelExpanded,
