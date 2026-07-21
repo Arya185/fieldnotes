@@ -18,7 +18,7 @@ This is for night-before-exam moment when one formula or definition is buried ac
 
 Try the deployed application:
 
-**https://fieldnotes-vwp2.onrender.com**
+**https://fieldnotes-4b2p.onrender.com**
 
 > **Note:** This app is hosted on Render's free tier. If the service has been idle, the backend may take up to 30 seconds to wake up before responding to the first request.
 
