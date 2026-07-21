@@ -15,6 +15,54 @@ import type {
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 
+interface ErrorPayload {
+  code?: string;
+  message?: string;
+}
+
+export class ApiError extends Error {
+  status: number;
+  code?: string;
+  body?: unknown;
+
+  constructor(message: string, status: number, code?: string, body?: unknown) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.code = code;
+    this.body = body;
+  }
+}
+
+export function isWorkspaceNotFoundError(error: unknown): error is ApiError {
+  return error instanceof ApiError && error.status === 404 && error.code === "WORKSPACE_NOT_FOUND";
+}
+
+async function buildApiError(response: Response): Promise<ApiError> {
+  let body: unknown;
+  let payload: ErrorPayload | undefined;
+
+  try {
+    body = await response.json();
+    if (body && typeof body === "object") {
+      payload = body as ErrorPayload;
+    }
+  } catch {
+    try {
+      body = await response.text();
+    } catch {
+      body = undefined;
+    }
+  }
+
+  return new ApiError(
+    payload?.message || `${response.status} ${response.statusText}`,
+    response.status,
+    payload?.code,
+    body,
+  );
+}
+
 async function requestJson<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
   const response = await fetch(input, {
     ...init,
@@ -24,7 +72,7 @@ async function requestJson<T>(input: RequestInfo, init?: RequestInit): Promise<T
     },
   });
   if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}`);
+    throw await buildApiError(response);
   }
   return (await response.json()) as T;
 }
@@ -64,7 +112,7 @@ export async function fetchArtifact(
     `${API_BASE}/artifact/${encodeURIComponent(artifactId)}?workspace_id=${encodeURIComponent(workspaceId)}`,
   );
   if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}`);
+    throw await buildApiError(response);
   }
   return response;
 }
@@ -100,7 +148,7 @@ export async function openIndexEvents(
 ): Promise<void> {
   const response = await fetch(`${API_BASE}${eventsPath}`, { signal });
   if (!response.ok || !response.body) {
-    throw new Error(`${response.status} ${response.statusText}`);
+    throw await buildApiError(response);
   }
   await readSse(response.body, (payload) => onEvent(payload as IndexEvent), signal);
 }
@@ -118,7 +166,7 @@ async function consumeSse<TEvent>(
     signal,
   });
   if (!response.ok || !response.body) {
-    throw new Error(`${response.status} ${response.statusText}`);
+    throw await buildApiError(response);
   }
   await readSse(response.body, (chunk) => onEvent(chunk as TEvent), signal);
 }

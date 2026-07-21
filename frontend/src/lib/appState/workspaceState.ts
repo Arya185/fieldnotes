@@ -1,7 +1,7 @@
 import type { Dispatch, DragEvent, SetStateAction } from "react";
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
-import { fetchArtifact, getHealth, getNotebook, getSource, postIndex } from "../api";
+import { fetchArtifact, getHealth, getNotebook, getSource, isWorkspaceNotFoundError, postIndex } from "../api";
 import {
   loadDeveloperMode,
   loadIndexHistory,
@@ -20,6 +20,8 @@ const PINNED_ARTIFACTS_KEY = "fieldnotes.pinnedArtifacts";
 const NOTE_OVERRIDES_KEY = "fieldnotes.noteOverrides";
 const EMPTY_NOTE_OVERRIDES: NoteOverrides = { hiddenIds: [], pinnedIds: [], renamedTitles: {} };
 const DEFAULT_WORKSPACE_PATH = import.meta.env.VITE_DEFAULT_WORKSPACE_PATH ?? "";
+const WORKSPACE_MISSING_MESSAGE =
+  "This workspace is no longer available. It may have been moved or deleted. Please select another workspace or index a new folder.";
 
 function readPinnedArtifacts(): string[] {
   if (typeof window === "undefined") {
@@ -114,6 +116,7 @@ interface UseWorkspaceStateArgs {
   setContextTab: Dispatch<SetStateAction<ContextTab>>;
   setContextPanelOpen: Dispatch<SetStateAction<boolean>>;
   setRoute: Dispatch<SetStateAction<RouteKey>>;
+  onWorkspaceRecovered?: (workspaceId: string | null) => void;
 }
 
 export function useWorkspaceState({
@@ -123,6 +126,7 @@ export function useWorkspaceState({
   setContextTab,
   setContextPanelOpen,
   setRoute,
+  onWorkspaceRecovered,
 }: UseWorkspaceStateArgs) {
   const [recentWorkspaces, setRecentWorkspaces] = useState<StoredWorkspaceRecord[]>(loadRecentWorkspaces);
   const [indexHistory, setIndexHistory] = useState<IndexHistoryEntry[]>(loadIndexHistory);
@@ -150,7 +154,9 @@ export function useWorkspaceState({
   const [runtimeMode, setRuntimeMode] = useState<"live" | "fake" | null>(null);
   const [sourceSearch, setSourceSearch] = useState("");
   const [sourcePanelExpanded, setSourcePanelExpanded] = useState(true);
+  const [recoveryMessage, setRecoveryMessage] = useState<string | null>(null);
   const { startIndexStream } = useIndexStream();
+  const recoveredWorkspaceIdsRef = useRef(new Set<string>());
 
   const activeWorkspace = recentWorkspaces.find((workspace) => workspace.workspaceId === activeWorkspaceId);
   const indexedDocumentCount = notebook.file_count;
@@ -191,6 +197,10 @@ export function useWorkspaceState({
     void getNotebook(activeWorkspaceId)
       .then(setNotebook)
       .catch((error: Error) => {
+        if (isWorkspaceNotFoundError(error)) {
+          recoverMissingWorkspace(activeWorkspaceId);
+          return;
+        }
         setNotebook({ artifacts: [], file_count: 0, chunk_count: 0 });
         setErrorMessage(`Notebook load failed: ${error.message}`);
       });
@@ -271,11 +281,80 @@ export function useWorkspaceState({
   async function loadNotebookForWorkspace(workspaceId: string) {
     try {
       const data = await getNotebook(workspaceId);
+      setRecoveryMessage(null);
       setNotebook(data);
     } catch (error) {
+      if (isWorkspaceNotFoundError(error)) {
+        recoverMissingWorkspace(workspaceId);
+        return;
+      }
       setErrorMessage(`Workspace not found: ${(error as Error).message}`);
       setNotebook({ artifacts: [], file_count: 0, chunk_count: 0 });
     }
+  }
+
+  function clearWorkspaceScopedViewState() {
+    setNotebook({ artifacts: [], file_count: 0, chunk_count: 0 });
+    setSourceView({});
+    setArtifactPreview(null);
+    setIndexEvents([]);
+    setPinnedArtifacts([]);
+  }
+
+  function pruneWorkspacePersistence(workspaceId: string) {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      const raw = window.localStorage.getItem(NOTE_OVERRIDES_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Record<string, NoteOverrides>;
+        if (parsed && typeof parsed === "object" && workspaceId in parsed) {
+          const next = { ...parsed };
+          delete next[workspaceId];
+          window.localStorage.setItem(NOTE_OVERRIDES_KEY, JSON.stringify(next));
+        }
+      }
+    } catch {
+      window.localStorage.removeItem(NOTE_OVERRIDES_KEY);
+    }
+
+    const storageKeys = [window.localStorage, window.sessionStorage];
+    for (const storage of storageKeys) {
+      for (const key of Object.keys(storage)) {
+        if (key.startsWith("fieldnotes.") && storage.getItem(key)?.includes(workspaceId)) {
+          storage.removeItem(key);
+        }
+      }
+    }
+  }
+
+  function recoverMissingWorkspace(workspaceId: string) {
+    if (recoveredWorkspaceIdsRef.current.has(workspaceId)) {
+      return;
+    }
+    recoveredWorkspaceIdsRef.current.add(workspaceId);
+
+    const nextWorkspaces = recentWorkspaces.filter((item) => item.workspaceId !== workspaceId);
+    const nextActiveWorkspaceId = nextWorkspaces[0]?.workspaceId ?? null;
+
+    clearWorkspaceScopedViewState();
+    pruneWorkspacePersistence(workspaceId);
+    setErrorMessage(null);
+    setRecoveryMessage(WORKSPACE_MISSING_MESSAGE);
+    setStatusMessage(WORKSPACE_MISSING_MESSAGE);
+    setRecentWorkspaces(nextWorkspaces);
+    setIndexHistory((current) => current.filter((entry) => entry.workspaceId !== workspaceId));
+    setActiveWorkspaceId(nextActiveWorkspaceId);
+    setNoteOverrides(EMPTY_NOTE_OVERRIDES);
+    setSourceSearch("");
+    setContextPanelOpen(false);
+    setContextTab("sources");
+    if (!nextActiveWorkspaceId) {
+      setRoute("workspace");
+    }
+    onWorkspaceRecovered?.(nextActiveWorkspaceId);
   }
 
   function renameArtifact(artifact: ArtifactCard) {
@@ -342,6 +421,7 @@ export function useWorkspaceState({
     }
     setBusy(true);
     setErrorMessage(null);
+    setRecoveryMessage(null);
     setStatusMessage("Indexing workspace...");
     const accepted = await postIndex({ folder_path: folder.trim() });
     const record: StoredWorkspaceRecord = {
@@ -461,6 +541,10 @@ export function useWorkspaceState({
       setContextPanelOpen(true);
       setRoute("notebook");
     } catch (error) {
+      if (isWorkspaceNotFoundError(error)) {
+        recoverMissingWorkspace(activeWorkspaceId);
+        return;
+      }
       setErrorMessage(`Artifact open failed: ${(error as Error).message}`);
     }
   }
@@ -477,6 +561,10 @@ export function useWorkspaceState({
       setContextPanelOpen(true);
       setRoute("source");
     } catch (error) {
+      if (isWorkspaceNotFoundError(error)) {
+        recoverMissingWorkspace(activeWorkspaceId);
+        return;
+      }
       setErrorMessage(`Source open failed: ${(error as Error).message}`);
     }
   }
@@ -554,6 +642,7 @@ export function useWorkspaceState({
     setSourceSearch,
     sourcePanelExpanded,
     setSourcePanelExpanded,
+    recoveryMessage,
     indexedDocumentCount,
     lastIndexEntry,
     filteredArtifacts,
@@ -572,5 +661,6 @@ export function useWorkspaceState({
     resetArtifactVisibility,
     clearActiveWorkspace,
     updateWorkspaceRecord,
+    recoverMissingWorkspace,
   };
 }

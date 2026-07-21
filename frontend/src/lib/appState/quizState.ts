@@ -1,6 +1,7 @@
 import type { Dispatch, SetStateAction } from "react";
 import { useMemo, useState } from "react";
 
+import { isWorkspaceNotFoundError } from "../api";
 import { useQuizStream } from "../useQuizStream";
 import type { QuizEvent } from "../../types";
 import type { ChatMessage, ConceptSummaryItem, QuizState } from "./types";
@@ -12,6 +13,7 @@ interface UseQuizStateArgs {
   setBusy: Dispatch<SetStateAction<boolean>>;
   setErrorMessage: Dispatch<SetStateAction<string | null>>;
   setStatusMessage: Dispatch<SetStateAction<string>>;
+  onWorkspaceMissing: (workspaceId: string) => void;
 }
 
 export function useQuizState({
@@ -21,6 +23,7 @@ export function useQuizState({
   setBusy,
   setErrorMessage,
   setStatusMessage,
+  onWorkspaceMissing,
 }: UseQuizStateArgs) {
   const [quizState, setQuizState] = useState<QuizState>({ progress: [], reviews: [] });
   const [incorrectReviewOnly, setIncorrectReviewOnly] = useState(false);
@@ -84,6 +87,10 @@ export function useQuizState({
         }
       },
       (error: Error) => {
+        if (activeWorkspaceId && isWorkspaceNotFoundError(error)) {
+          onWorkspaceMissing(activeWorkspaceId);
+          return;
+        }
         setBusy(false);
         setErrorMessage(`Quiz start failed: ${error.message}`);
         setStatusMessage(error.message);
@@ -135,11 +142,20 @@ export function useQuizState({
         }
       },
       (error: Error) => {
+        if (activeWorkspaceId && isWorkspaceNotFoundError(error)) {
+          onWorkspaceMissing(activeWorkspaceId);
+          return;
+        }
         setBusy(false);
         setErrorMessage(`Quiz answer failed: ${error.message}`);
         setStatusMessage(error.message);
       },
     );
+  }
+
+  function resetWorkspaceScopedState() {
+    setQuizState({ progress: [], reviews: [] });
+    setIncorrectReviewOnly(false);
   }
 
   return {
@@ -151,5 +167,6 @@ export function useQuizState({
     reviewItems,
     handleStartQuiz,
     handleAnswerQuiz,
+    resetWorkspaceScopedState,
   };
 }

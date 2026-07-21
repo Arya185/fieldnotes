@@ -21,6 +21,13 @@ function makeJsonResponse(payload: unknown) {
   });
 }
 
+export function makeErrorJsonResponse(status: number, payload: unknown) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 export function installAppFetchMock() {
   window.localStorage.clear();
   window.location.hash = "";

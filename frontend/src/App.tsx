@@ -80,6 +80,7 @@ export default function App() {
                 </div>
               )}
             </div>
+            {app.recoveryMessage && <p className="error-banner" role="status">{app.recoveryMessage}</p>}
             {app.errorMessage && <p className="error-banner" role="alert">{app.errorMessage}</p>}
           </div>
           <div className="header-badges">

@@ -1,5 +1,5 @@
 import type { RefObject } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { fetchArtifact } from "./api";
 import { useAskState } from "./appState/askState";
@@ -39,6 +39,20 @@ export function useFieldnotesApp(composerRef: RefObject<HTMLTextAreaElement | nu
   const [busy, setBusy] = useState(false);
   const [statusMessage, setStatusMessage] = useState("Ready.");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const recoveryRef = useRef<{
+    resetAsk: () => void;
+    resetQuiz: () => void;
+  }>({
+    resetAsk: () => undefined,
+    resetQuiz: () => undefined,
+  });
+
+  function handleWorkspaceRecovered(_nextWorkspaceId: string | null) {
+    recoveryRef.current.resetAsk();
+    recoveryRef.current.resetQuiz();
+    setBusy(false);
+    setErrorMessage(null);
+  }
 
   const workspace = useWorkspaceState({
     setBusy,
@@ -47,6 +61,7 @@ export function useFieldnotesApp(composerRef: RefObject<HTMLTextAreaElement | nu
     setContextTab,
     setContextPanelOpen,
     setRoute,
+    onWorkspaceRecovered: handleWorkspaceRecovered,
   });
 
   const ask = useAskState({
@@ -60,6 +75,7 @@ export function useFieldnotesApp(composerRef: RefObject<HTMLTextAreaElement | nu
     setStatusMessage,
     setContextTab,
     setContextPanelOpen,
+    onWorkspaceMissing: workspace.recoverMissingWorkspace,
   });
 
   const quiz = useQuizState({
@@ -69,7 +85,11 @@ export function useFieldnotesApp(composerRef: RefObject<HTMLTextAreaElement | nu
     setBusy,
     setErrorMessage,
     setStatusMessage,
+    onWorkspaceMissing: workspace.recoverMissingWorkspace,
   });
+
+  recoveryRef.current.resetAsk = ask.resetWorkspaceScopedState;
+  recoveryRef.current.resetQuiz = quiz.resetWorkspaceScopedState;
 
   useEffect(() => {
     window.location.hash = route;
@@ -196,6 +216,7 @@ export function useFieldnotesApp(composerRef: RefObject<HTMLTextAreaElement | nu
     busy,
     statusMessage,
     errorMessage,
+    recoveryMessage: workspace.recoveryMessage,
     recentWorkspaces: workspace.recentWorkspaces,
     indexHistory: workspace.indexHistory,
     developerMode: workspace.developerMode,

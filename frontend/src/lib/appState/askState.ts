@@ -1,7 +1,7 @@
 import type { Dispatch, RefObject, SetStateAction, UIEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { getSource } from "../api";
+import { getSource, isWorkspaceNotFoundError } from "../api";
 import { useAskStream } from "../useAskStream";
 import type { AskEvent, CitationChip } from "../../types";
 import type {
@@ -25,6 +25,7 @@ interface UseAskStateArgs {
   setStatusMessage: Dispatch<SetStateAction<string>>;
   setContextTab: Dispatch<SetStateAction<ContextTab>>;
   setContextPanelOpen: Dispatch<SetStateAction<boolean>>;
+  onWorkspaceMissing: (workspaceId: string) => void;
 }
 
 export function useAskState({
@@ -38,6 +39,7 @@ export function useAskState({
   setStatusMessage,
   setContextTab,
   setContextPanelOpen,
+  onWorkspaceMissing,
 }: UseAskStateArgs) {
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -193,6 +195,10 @@ export function useAskState({
         setStreamingAnswerId(null);
       },
       (error: Error) => {
+        if (activeWorkspaceId && isWorkspaceNotFoundError(error)) {
+          onWorkspaceMissing(activeWorkspaceId);
+          return;
+        }
         setBusy(false);
         setTypingIndicator(false);
         setStreamingAnswerId(null);
@@ -279,6 +285,16 @@ export function useAskState({
     setContextPanelOpen(true);
   }
 
+  function resetWorkspaceScopedState() {
+    setChatMessages([]);
+    setDeveloperChunks([]);
+    setStreamingAnswerId(null);
+    setTypingIndicator(false);
+    setAllSourcesExpanded(false);
+    setSourceAccordionState({});
+    setChatInput("");
+  }
+
   return {
     chatInput,
     setChatInput,
@@ -303,5 +319,6 @@ export function useAskState({
     copyAnswer,
     onChatScroll,
     openCitation,
+    resetWorkspaceScopedState,
   };
 }
