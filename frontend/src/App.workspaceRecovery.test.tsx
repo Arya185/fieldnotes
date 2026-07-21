@@ -33,7 +33,7 @@ describe("Fieldnotes stale workspace recovery", () => {
     expect(screen.getByRole("status")).toHaveTextContent(
       "This workspace is no longer available. It may have been moved or deleted. Please select another workspace or index a new folder.",
     );
-    expect(window.localStorage.getItem("fieldnotes.workspaces")).toBe("[]");
+    expect(window.localStorage.getItem("fieldnotes.workspaces")).toBeNull();
     expect(screen.getByText("Choose a workspace")).toBeInTheDocument();
   });
 
