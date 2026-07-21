@@ -19,7 +19,7 @@
 
 | Date | Command | Result |
 |---|---|---|
-| 2026-07-21 | `.venv312/bin/python -m unittest discover -s tests` | PASS (135 tests, hermetic retrieval-eval fixture path verified) |
+| 2026-07-21 | `FIELDNOTES_USE_FAKE_LLM=1 python -m unittest discover -s tests` | `Ran 135 tests in 45.681s` / `OK (skipped=4)` |
 | 2026-07-20 | `.venv312/bin/python -m unittest discover -s tests` | PASS |
 | 2026-07-20 | `cd frontend && npm test` | PASS |
 | 2026-07-20 | `cd frontend && npm run build` | PASS |

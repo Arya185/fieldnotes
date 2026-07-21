@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -26,6 +27,23 @@ def build_workspace(root: Path, filename: str, contents: str) -> None:
 
 
 class Phase2RerankerTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        super().setUpClass()
+        cls.demo_course_temp_dir = tempfile.TemporaryDirectory()
+        cls.demo_course_workspace = Path(cls.demo_course_temp_dir.name) / "demo_course"
+        shutil.copytree(
+            Path("demo_course"),
+            cls.demo_course_workspace,
+            ignore=shutil.ignore_patterns(".fieldnotes"),
+        )
+        run_indexing(cls.demo_course_workspace, "workspace_demo_course_rerank", EventStreamHub())
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.demo_course_temp_dir.cleanup()
+        super().tearDownClass()
+
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
         self.base = Path(self.temp_dir.name)
@@ -130,8 +148,9 @@ class Phase2RerankerTests(unittest.TestCase):
         self.assertEqual(benchmarks[0].relevant_anchors, {first_expected})
 
     def test_demo_course_retrieval_fixture_reports_precision_and_recall(self) -> None:
-        workspace = Path("demo_course")
-        connection = connect_sqlite(workspace / ".fieldnotes" / "fieldnotes.db")
+        connection = connect_sqlite(
+            self.demo_course_workspace / ".fieldnotes" / "fieldnotes.db"
+        )
         try:
             provider = HybridProvider(connection, mode="hybrid", bm25_weight=0.5, vector_weight=0.5)
             comparison = compare_reranking(
