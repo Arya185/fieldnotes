@@ -136,11 +136,14 @@ class ApiIntegrationTests(unittest.TestCase):
                 self.assertEqual(body["startup"], "healthy")
                 self.assertEqual(app.state.release_metadata["version"], "1.0.0-beta.1")
 
-    def test_lifespan_without_api_key_fails_startup(self) -> None:
+    def test_lifespan_without_api_key_falls_back_to_fake_mode(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
-            with self.assertRaises(RuntimeError):
-                with TestClient(app):
-                    pass
+            with TestClient(app) as client:
+                response = client.get("/health")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "ok")
+        self.assertEqual(response.json()["mode"], "fake")
+        self.assertEqual(response.json()["llm_mode"], "fake")
 
     def test_notebook_invalid_workspace_returns_stable_rest_error(self) -> None:
         response = self.client.get("/notebook", params={"workspace_id": "missing"})
