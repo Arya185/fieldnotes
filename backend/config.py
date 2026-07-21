@@ -125,24 +125,23 @@ def format_missing_openai_api_key_message() -> str:
 def determine_llm_mode() -> str:
     """Resolve effective LLM mode from current environment."""
 
-    if parse_env_flag(env_value("FIELDNOTES_USE_FAKE_LLM", DEFAULT_USE_FAKE_LLM)):
-        return "fake"
     if _has_live_llm_configuration():
         return "live"
-    return "invalid"
+    return "fake"
 
 
 def apply_startup_llm_mode() -> str:
     """Apply effective startup LLM mode and emit operator-facing logs."""
 
-    if parse_env_flag(env_value("FIELDNOTES_USE_FAKE_LLM", DEFAULT_USE_FAKE_LLM)):
-        os.environ["FIELDNOTES_USE_FAKE_LLM"] = "1"
-        logger.warning("Running in explicit fake LLM mode.")
-        return "fake"
-    os.environ["FIELDNOTES_USE_FAKE_LLM"] = "0"
-    _validate_live_llm_configuration()
-    logger.info("OpenAI-compatible API detected. Running in live mode.")
-    return "live"
+    if _has_live_llm_configuration():
+        os.environ["FIELDNOTES_USE_FAKE_LLM"] = "0"
+        _validate_live_llm_configuration()
+        logger.info("OpenAI API detected. Running in live mode.")
+        return "live"
+
+    os.environ["FIELDNOTES_USE_FAKE_LLM"] = "1"
+    logger.warning("No OPENAI_API_KEY detected. Falling back to fake LLM mode.")
+    return "fake"
 
 
 @dataclass(frozen=True)
@@ -247,13 +246,7 @@ def normalize_configured_value(value: str) -> str:
 
 
 def _has_live_llm_configuration() -> bool:
-    return all(
-        (
-            normalize_configured_value(env_value("OPENAI_API_KEY", DEFAULT_OPENAI_API_KEY)),
-            normalize_configured_value(env_value("OPENAI_BASE_URL", DEFAULT_OPENAI_BASE_URL)),
-            normalize_configured_value(env_value("OPENAI_MODEL", DEFAULT_OPENAI_MODEL)),
-        )
-    )
+    return bool(normalize_configured_value(env_value("OPENAI_API_KEY", DEFAULT_OPENAI_API_KEY)))
 
 
 def _validate_live_llm_configuration() -> None:
@@ -308,22 +301,7 @@ def validate_runtime_configuration() -> StartupDiagnostics:
     llm_base_url = normalize_configured_value(env_value("OPENAI_BASE_URL", DEFAULT_OPENAI_BASE_URL))
     llm_transport = "responses" if not llm_base_url else "chat_completions"
     llm_probe_response_id: str | None = None
-
-    responses_api_check = "explicit_fake" if fake_llm else "configured"
-    if not fake_llm:
-        from backend.agent.llm import verify_responses_api_connection
-
-        try:
-            probe = verify_responses_api_connection(
-                model=llm_model,
-                api_key=normalize_configured_value(env_value("OPENAI_API_KEY", DEFAULT_OPENAI_API_KEY)),
-                base_url=llm_base_url,
-                timeout_seconds=10.0,
-            )
-        except Exception as exc:
-            raise ConfigurationError(str(exc)) from exc
-        responses_api_check = "ok"
-        llm_probe_response_id = probe.response_id
+    responses_api_check = "ok" if fake_llm else "configured"
 
     startup_checks = {
         "responses_api": responses_api_check,

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import re
-import resource
 import time
 from collections import defaultdict
 from contextlib import contextmanager
@@ -15,6 +14,11 @@ from typing import Any, Iterator, Literal
 from uuid import uuid4
 
 from backend.config import ENABLE_METRICS, ENABLE_TRACING, VERBOSE_TRACING, parse_env_flag
+
+try:
+    import resource
+except ModuleNotFoundError:  # pragma: no cover - Windows
+    resource = None
 
 
 SpanStatus = Literal["ok", "failed"]
@@ -177,6 +181,8 @@ class RequestMetricsSession:
 
 
 def _memory_rss_mb() -> float | None:
+    if resource is None:
+        return None
     try:
         usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     except Exception:

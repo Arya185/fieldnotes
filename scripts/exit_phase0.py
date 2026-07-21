@@ -101,15 +101,16 @@ def verify_responses_configuration() -> None:
 
 
 def verify_live_api() -> None:
-    load_project_dotenv()
-    api_key = env_value("OPENAI_API_KEY", "").strip()
+    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not api_key:
         raise SkippedCheck("OPENAI_API_KEY not set")
-    model = env_value("OPENAI_MODEL", DEFAULT_OPENAI_MODEL).strip()
+    model = os.environ.get("OPENAI_MODEL", DEFAULT_OPENAI_MODEL).strip()
+    base_url = os.environ.get("OPENAI_BASE_URL", "").strip() or None
     try:
         probe = verify_responses_api_connection(
             model=model,
             api_key=api_key,
+            base_url=base_url,
             timeout_seconds=10.0,
         )
     except ResponsesAPIProbeError as exc:

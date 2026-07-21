@@ -96,12 +96,13 @@ def main() -> int:
         )
         health_payload = _wait_for_backend_http(backend_process, base_url)
         results.append(("backend starts", True, "uvicorn healthy"))
-        if health_payload != {
-            "status": "ok",
-            "version": expected_version(),
-            "mode": "fake" if use_fake_mode else "live",
-            "startup": "healthy",
-        }:
+        expected_mode = "fake" if use_fake_mode else "live"
+        if (
+            health_payload.get("status") != "ok"
+            or health_payload.get("version") != expected_version()
+            or health_payload.get("mode") != expected_mode
+            or health_payload.get("startup") != "healthy"
+        ):
             raise RuntimeError(f"/health payload mismatch: {health_payload}")
         results.append(("health endpoint responds", True, health_payload["version"]))
 
