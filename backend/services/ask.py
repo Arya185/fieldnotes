@@ -27,6 +27,7 @@ from backend.sandbox.runner import run_generated_analysis
 from backend.storage import (
     create_artifact,
     load_dataset_profiles,
+    load_workspace_counts,
     upsert_concept_updates,
     validate_citation_anchors,
 )
@@ -71,6 +72,7 @@ async def stream_ask_events(
 
         connection = connect_sqlite(workspace_record.db_path)
         try:
+            _file_count, workspace_chunk_count = load_workspace_counts(connection)
             retrieval_provider = get_retrieval_provider(connection)
             if hasattr(client, "build_plan") and hasattr(client, "execute_plan"):
                 execution_plan = await asyncio.to_thread(
@@ -88,23 +90,32 @@ async def stream_ask_events(
                     answer_id=answer_id,
                     retrieval_provider=retrieval_provider,
                 )
-                retrieval_results = execution_context_data.retrieved_chunks
+                matched_retrieval_results = execution_context_data.retrieved_chunks
             else:
                 execution_plan = None
                 execution_context_data = None
-                retrieval_results = client.resolve_retrieval(request.question, retrieval_provider)
-            if not retrieval_results:
+                matched_retrieval_results = client.resolve_retrieval(request.question, retrieval_provider)
+            retrieval_results = list(matched_retrieval_results)
+            if not retrieval_results and workspace_chunk_count > 0:
                 retrieval_results = load_fallback_retrieval(connection, limit=5)
         finally:
             connection.close()
+
+        workspace_has_searchable_content = workspace_chunk_count > 0
 
         yield sse(
             StepEvent(
                 event="step",
                 answer_id=answer_id,
                 step="retrieval",
-                label=f"retrieved {len(retrieval_results)} passages",
-                status="ok",
+                label=(
+                    f"retrieved {len(matched_retrieval_results)} passages"
+                    if matched_retrieval_results
+                    else "workspace contains no searchable passages"
+                    if not workspace_has_searchable_content
+                    else "no supporting passages matched this question"
+                ),
+                status="ok" if matched_retrieval_results else "no_match",
             ).model_dump()
         )
 
@@ -332,8 +343,14 @@ async def stream_ask_events(
                 event="step",
                 answer_id=answer_id,
                 step="grounding",
-                label="answer grounded" if retrieval_results else "no supporting sources found",
-                status="ok" if retrieval_results else "no_match",
+                label=(
+                    "answer grounded"
+                    if matched_retrieval_results
+                    else "workspace has no indexed content"
+                    if not workspace_has_searchable_content
+                    else "no supporting sources found"
+                ),
+                status="ok" if matched_retrieval_results else "no_match",
             ).model_dump()
         )
 
@@ -343,12 +360,16 @@ async def stream_ask_events(
                 label=source_label(result.relative_path, result.anchor),
                 anchor=f"{result.file_id}#{result.anchor}",
             )
-            for result in retrieval_results
+            for result in matched_retrieval_results
         ]
         if code_chip is not None:
             raw_chips.append(code_chip)
 
-        concepts = client.extract_concepts(request.question, retrieval_results) if retrieval_results else []
+        concepts = (
+            client.extract_concepts(request.question, matched_retrieval_results)
+            if matched_retrieval_results
+            else []
+        )
         artifact_event = ArtifactEvent(
             event="artifact",
             answer_id=answer_id,
