@@ -49,6 +49,8 @@ flowchart TD
 
 More specifically, [backend/agent/llm.py](backend/agent/llm.py) depends on `LLMClient.resolve_retrieval()` running `SEARCH_INDEX_TOOL` through function calls and then sending tool results back through `function_call_output` before answer generation continues. Same file also uses strict `json_schema` outputs in separate paths for `LLMClient.classify_intent()` with `RouteIntentSchema`, `LLMClient.generate_quiz_question()` with `QuizQuestionSchema`, and `LLMClient.extract_concepts()` with `ConceptExtractionSchema`. Streamed token output from `LLMClient.stream_grounded_answer()` is then forwarded by [backend/services/ask.py](backend/services/ask.py) into SSE `token` events, so replacing provider requires equivalent support across tool calling, strict schema validation, and streaming.
 
+Native OpenAI Responses API path is default and reference transport. OpenAI-compatible Chat Completions path behind `OPENAI_BASE_URL` is optional fallback for local or offline development, but [backend/agent/llm.py](backend/agent/llm.py) still had to reimplement tool-calling in `LLMClient._create_tool_completion()` and strict structured output handling in `LLMClient._create_structured_completion()`, so it is not drop-in model swap.
+
 > **No OpenAI key?** App runs in deterministic fake-LLM mode automatically. No cost, no key needed to try it.
 
 After indexing `demo_course/` and substituting returned `workspace_id`, `/ask` streams SSE like this:
