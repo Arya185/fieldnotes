@@ -13,7 +13,7 @@ os.environ.setdefault("FIELDNOTES_USE_FAKE_LLM", "1")
 from fastapi.testclient import TestClient
 
 from backend.db import connect_sqlite
-from backend.main import app, get_workspace_record
+from backend.main import app, get_workspace_manager, get_workspace_record
 from backend.indexer.workspace_manager import WorkspaceManager, workspace_manager
 from backend.indexer.bm25 import RetrievalChunk
 from backend.models import ConceptUpdate, QuizQuestionSchema, RouteIntentSchema
@@ -152,9 +152,40 @@ class ApiIntegrationTests(unittest.TestCase):
 
     def test_get_workspace_record_dependency_raises_404_for_missing_workspace(self) -> None:
         with self.assertRaises(Exception) as context:
-            get_workspace_record("missing")
+            get_workspace_record("missing", manager=workspace_manager)
         self.assertEqual(getattr(context.exception, "status_code", None), 404)
         self.assertEqual(getattr(context.exception, "detail", None), "Unknown workspace_id")
+
+    def test_workspace_manager_dependency_can_be_overridden_in_tests(self) -> None:
+        class OverrideWorkspaceManager:
+            def get(self, workspace_id: str):
+                if workspace_id == "override":
+                    return type(
+                        "Record",
+                        (),
+                        {
+                            "workspace_id": "override",
+                            "root": Path("/tmp/override"),
+                            "db_path": Path("/tmp/override/.fieldnotes/fieldnotes.db"),
+                            "artifacts_dir": Path("/tmp/override/.fieldnotes/artifacts"),
+                            "metadata_path": Path("/tmp/override/.fieldnotes/workspace.json"),
+                        },
+                    )()
+                return None
+
+            def last_recovery_warning(self):
+                return "override warning"
+
+        app.dependency_overrides[get_workspace_manager] = lambda: OverrideWorkspaceManager()
+        try:
+            health = self.client.get("/health")
+            self.assertEqual(health.status_code, 200)
+            self.assertEqual(health.json()["registry_warning"], "override warning")
+
+            record = get_workspace_record("override", manager=OverrideWorkspaceManager())
+            self.assertEqual(record.workspace_id, "override")
+        finally:
+            app.dependency_overrides.pop(get_workspace_manager, None)
 
     def test_index_allows_trusted_origin_and_rejects_foreign_origin(self) -> None:
         ws = self.base / "origin-block"

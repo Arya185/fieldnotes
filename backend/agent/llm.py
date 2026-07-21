@@ -5,14 +5,14 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import Iterator
+from typing import Any, Iterator
 
 from openai import APITimeoutError, AuthenticationError, OpenAI
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.agent.executor import ExecutionContext, Executor
 from backend.agent.planner import ExecutionPlan, Planner, default_plan
-from backend.config import OPENAI_MODEL
+from backend.config import OPENAI_BASE_URL, OPENAI_MODEL
 from backend.indexer.bm25 import RetrievalChunk, RetrievalProvider
 from backend.indexer.reranker import DeterministicReranker
 from backend.models import ArtifactEvent, ConceptUpdate, QuizQuestionSchema, RouteIntentSchema
@@ -80,6 +80,7 @@ def verify_responses_api_connection(
     *,
     model: str,
     api_key: str | None = None,
+    base_url: str | None = None,
     timeout_seconds: float = 10.0,
     client: OpenAI | None = None,
 ) -> ResponsesAPIProbeResult:
@@ -93,15 +94,23 @@ def verify_responses_api_connection(
         model=normalized_model,
         timeout_seconds=timeout_seconds,
         api_key=api_key,
+        base_url=base_url,
         client=client,
         max_retries=0,
     )
 
     try:
-        response = wrapper.client.responses.create(
-            model=normalized_model,
-            store=False,
-            input=[
+        response = wrapper._create_structured_completion(
+            response_name="live_probe",
+            schema={
+                "type": "object",
+                "properties": {
+                    "status": {"type": "string"},
+                },
+                "required": ["status"],
+                "additionalProperties": False,
+            },
+            input_items=[
                 {
                     "role": "developer",
                     "content": "Return JSON only. Reply with {\"status\":\"ok\"}.",
@@ -111,21 +120,6 @@ def verify_responses_api_connection(
                     "content": "ping",
                 },
             ],
-            text={
-                "format": {
-                    "type": "json_schema",
-                    "name": "live_probe",
-                    "schema": {
-                        "type": "object",
-                        "properties": {
-                            "status": {"type": "string"},
-                        },
-                        "required": ["status"],
-                        "additionalProperties": False,
-                    },
-                    "strict": True,
-                }
-            },
         )
     except AuthenticationError as exc:
         raise ResponsesAPIProbeError("OpenAI authentication failed. Check OPENAI_API_KEY.") from exc
@@ -136,7 +130,7 @@ def verify_responses_api_connection(
     except Exception as exc:
         raise ResponsesAPIProbeError(f"OpenAI Responses API probe failed: {exc}") from exc
 
-    output_text = getattr(response, "output_text", "") or ""
+    output_text = wrapper._response_output_text(response)
     if not output_text.strip():
         raise ResponsesAPIProbeError("OpenAI Responses API probe returned empty output")
 
@@ -164,14 +158,138 @@ class LLMClient:
         *,
         timeout_seconds: float = 30.0,
         api_key: str | None = None,
+        base_url: str | None = None,
         client: OpenAI | None = None,
         max_retries: int = 1,
     ) -> None:
-        self.client = client or OpenAI(api_key=api_key, timeout=timeout_seconds, max_retries=max_retries)
+        normalized_base_url = (base_url or OPENAI_BASE_URL or "").strip()
+        self.client = client or OpenAI(
+            api_key=api_key,
+            timeout=timeout_seconds,
+            max_retries=max_retries,
+            base_url=normalized_base_url or None,
+        )
         self.model = model
+        self.base_url = normalized_base_url
+        self.use_chat_completions_compat = bool(normalized_base_url)
         self.reranker = DeterministicReranker()
         self.planner = Planner(self.client, self.model)
         self.executor = Executor()
+
+    def _to_chat_messages(self, input_items: list[dict[str, str]]) -> list[dict[str, str]]:
+        messages: list[dict[str, str]] = []
+        for item in input_items:
+            role = item["role"]
+            if role == "developer":
+                role = "system"
+            messages.append({"role": role, "content": item["content"]})
+        return messages
+
+    def _create_structured_completion(
+        self,
+        *,
+        response_name: str,
+        schema: dict[str, Any],
+        input_items: list[dict[str, str]],
+        max_output_tokens: int | None = None,
+    ):
+        if not self.use_chat_completions_compat:
+            return self.client.responses.create(
+                model=self.model,
+                store=False,
+                input=input_items,
+                max_output_tokens=max_output_tokens,
+                text={
+                    "format": {
+                        "type": "json_schema",
+                        "name": response_name,
+                        "schema": schema,
+                        "strict": True,
+                    }
+                },
+            )
+
+        request: dict[str, Any] = {
+            "model": self.model,
+            "messages": self._to_chat_messages(input_items),
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": response_name,
+                    "schema": schema,
+                    "strict": True,
+                },
+            },
+        }
+        if max_output_tokens is not None:
+            request["max_tokens"] = max_output_tokens
+        return self.client.chat.completions.create(**request)
+
+    def _create_tool_completion(
+        self,
+        *,
+        input_items: list[dict[str, str]],
+        tools: list[dict[str, Any]],
+    ):
+        if not self.use_chat_completions_compat:
+            return self.client.responses.create(
+                model=self.model,
+                store=False,
+                input=input_items,
+                tools=tools,
+            )
+
+        chat_tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": tool["name"],
+                    "description": tool.get("description", ""),
+                    "parameters": tool.get("parameters", {}),
+                    "strict": tool.get("strict", False),
+                },
+            }
+            for tool in tools
+        ]
+        return self.client.chat.completions.create(
+            model=self.model,
+            messages=self._to_chat_messages(input_items),
+            tools=chat_tools,
+        )
+
+    def _response_output_text(self, response) -> str:
+        if not self.use_chat_completions_compat:
+            return getattr(response, "output_text", "") or ""
+        choice = (getattr(response, "choices", None) or [None])[0]
+        message = getattr(choice, "message", None)
+        content = getattr(message, "content", "")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts: list[str] = []
+            for item in content:
+                text = getattr(item, "text", None)
+                if text:
+                    parts.append(text)
+                elif isinstance(item, dict) and item.get("text"):
+                    parts.append(str(item["text"]))
+            return "".join(parts)
+        return ""
+
+    def _iter_tool_calls(self, response) -> Iterator[dict[str, str]]:
+        if not self.use_chat_completions_compat:
+            yield from _iter_function_calls(response)
+            return
+
+        choice = (getattr(response, "choices", None) or [None])[0]
+        message = getattr(choice, "message", None)
+        for tool_call in getattr(message, "tool_calls", None) or []:
+            function = getattr(tool_call, "function", None)
+            yield {
+                "call_id": getattr(tool_call, "id", ""),
+                "name": getattr(function, "name", ""),
+                "arguments": getattr(function, "arguments", "{}"),
+            }
 
     def classify_intent(self, question: str) -> RouteIntentSchema:
         """Classify user question with structured outputs."""
@@ -180,10 +298,10 @@ class LLMClient:
 
         with trace_collector.span("responses_api", operation="classify_intent") as metadata:
             started = time.perf_counter()
-            response = self.client.responses.create(
-                model=self.model,
-                store=False,
-                input=[
+            response = self._create_structured_completion(
+                response_name="route_intent",
+                schema=RouteIntentSchema.model_json_schema(),
+                input_items=[
                     {
                         "role": "developer",
                         "content": (
@@ -193,17 +311,9 @@ class LLMClient:
                     },
                     {"role": "user", "content": question},
                 ],
-                text={
-                    "format": {
-                        "type": "json_schema",
-                        "name": "route_intent",
-                        "schema": RouteIntentSchema.model_json_schema(),
-                        "strict": True,
-                    }
-                },
             )
             metrics_registry.record("llm_latency_ms", (time.perf_counter() - started) * 1000)
-            result = RouteIntentSchema.model_validate_json(response.output_text)
+            result = RouteIntentSchema.model_validate_json(self._response_output_text(response))
             metadata["intent"] = result.intent
             return result
 
@@ -215,10 +325,8 @@ class LLMClient:
 
         with trace_collector.span("responses_api", operation="resolve_retrieval") as metadata:
             started = time.perf_counter()
-            response = self.client.responses.create(
-                model=self.model,
-                store=False,
-                input=[
+            response = self._create_tool_completion(
+                input_items=[
                     {
                         "role": "developer",
                         "content": (
@@ -233,7 +341,7 @@ class LLMClient:
             metrics_registry.record("llm_latency_ms", (time.perf_counter() - started) * 1000)
             metadata["question"] = question
 
-            tool_calls = list(_iter_function_calls(response))
+            tool_calls = list(self._iter_tool_calls(response))
             if not tool_calls:
                 candidate_results = retrieval_provider.search(
                     question,
@@ -242,8 +350,6 @@ class LLMClient:
                 return self.reranker.rerank(question, candidate_results, limit=5).selected_chunks
 
             latest_results: list[RetrievalChunk] = []
-            previous_response_id = response.id
-            tool_outputs: list[dict[str, str]] = []
             for tool_call in tool_calls:
                 arguments = json.loads(tool_call["arguments"])
                 query = arguments.get("query", question)
@@ -257,7 +363,8 @@ class LLMClient:
                     candidate_results,
                     limit=limit,
                 ).selected_chunks
-                tool_outputs.append(
+            if latest_results and not self.use_chat_completions_compat:
+                tool_outputs = [
                     {
                         "type": "function_call_output",
                         "call_id": tool_call["call_id"],
@@ -274,14 +381,13 @@ class LLMClient:
                             ]
                         ),
                     }
-                )
-
-            if tool_outputs:
+                    for tool_call in tool_calls
+                ]
                 started = time.perf_counter()
                 self.client.responses.create(
                     model=self.model,
                     store=False,
-                    previous_response_id=previous_response_id,
+                    previous_response_id=response.id,
                     input=tool_outputs,
                 )
                 metrics_registry.record("llm_latency_ms", (time.perf_counter() - started) * 1000)
@@ -341,34 +447,49 @@ class LLMClient:
                 for index, result in enumerate(retrieval_results, start=1)
             ]
         )
-        stream = self.client.responses.create(
-            model=self.model,
-            store=False,
-            stream=True,
-            input=[
-                {
-                    "role": "developer",
-                    "content": (
-                        "Answer the user's question using only the provided retrieved passages. "
-                        "Use execution results when provided. "
-                        "Do not invent citations. If evidence is insufficient, say so plainly. "
-                        f"The routed intent is {intent}."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        f"Question:\n{question}\n\nRetrieved passages:\n{context}\n\n"
-                        f"Execution context:\n{execution_context or 'None'}"
-                    ),
-                },
-            ],
-        )
+        input_items = [
+            {
+                "role": "developer",
+                "content": (
+                    "Answer the user's question using only the provided retrieved passages. "
+                    "Use execution results when provided. "
+                    "Do not invent citations. If evidence is insufficient, say so plainly. "
+                    f"The routed intent is {intent}."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Question:\n{question}\n\nRetrieved passages:\n{context}\n\n"
+                    f"Execution context:\n{execution_context or 'None'}"
+                ),
+            },
+        ]
+        if not self.use_chat_completions_compat:
+            stream = self.client.responses.create(
+                model=self.model,
+                store=False,
+                stream=True,
+                input=input_items,
+            )
 
-        for event in stream:
-            event_type = getattr(event, "type", None)
-            if event_type == "response.output_text.delta":
-                yield getattr(event, "delta", "")
+            for event in stream:
+                event_type = getattr(event, "type", None)
+                if event_type == "response.output_text.delta":
+                    yield getattr(event, "delta", "")
+            return
+
+        stream = self.client.chat.completions.create(
+            model=self.model,
+            messages=self._to_chat_messages(input_items),
+            stream=True,
+        )
+        for chunk in stream:
+            choice = (getattr(chunk, "choices", None) or [None])[0]
+            delta = getattr(choice, "delta", None)
+            text = getattr(delta, "content", None)
+            if text:
+                yield text
 
     def generate_analysis_script(
         self,
@@ -385,10 +506,10 @@ class LLMClient:
                 for index, result in enumerate(retrieval_results, start=1)
             ]
         )
-        response = self.client.responses.create(
-            model=self.model,
-            store=False,
-            input=[
+        response = self._create_structured_completion(
+            response_name="analysis_script",
+            schema=AnalysisScriptSchema.model_json_schema(),
+            input_items=[
                 {
                     "role": "developer",
                     "content": (
@@ -409,16 +530,8 @@ class LLMClient:
                     ),
                 },
             ],
-            text={
-                "format": {
-                    "type": "json_schema",
-                    "name": "analysis_script",
-                    "schema": AnalysisScriptSchema.model_json_schema(),
-                    "strict": True,
-                }
-            },
         )
-        return AnalysisScriptSchema.model_validate_json(response.output_text)
+        return AnalysisScriptSchema.model_validate_json(self._response_output_text(response))
 
     def generate_quiz_question(
         self,
@@ -438,10 +551,10 @@ class LLMClient:
             if concept_ids
             else "Choose a concrete concept directly supported by the retrieved passages."
         )
-        response = self.client.responses.create(
-            model=self.model,
-            store=False,
-            input=[
+        response = self._create_structured_completion(
+            response_name="quiz_question",
+            schema=QuizQuestionSchema.model_json_schema(),
+            input_items=[
                 {
                     "role": "developer",
                     "content": (
@@ -456,16 +569,8 @@ class LLMClient:
                     "content": f"Retrieved passages:\n{context}",
                 },
             ],
-            text={
-                "format": {
-                    "type": "json_schema",
-                    "name": "quiz_question",
-                    "schema": QuizQuestionSchema.model_json_schema(),
-                    "strict": True,
-                }
-            },
         )
-        return QuizQuestionSchema.model_validate_json(response.output_text)
+        return QuizQuestionSchema.model_validate_json(self._response_output_text(response))
 
     def extract_concepts(
         self,
@@ -483,11 +588,11 @@ class LLMClient:
                 for index, result in enumerate(retrieval_results, start=1)
             ]
         )
-        response = self.client.responses.create(
-            model=self.model,
-            store=False,
+        response = self._create_structured_completion(
+            response_name="concept_extraction",
+            schema=ConceptExtractionSchema.model_json_schema(),
             max_output_tokens=180,
-            input=[
+            input_items=[
                 {
                     "role": "developer",
                     "content": (
@@ -501,16 +606,8 @@ class LLMClient:
                     "content": f"Question:\n{question}\n\nRetrieved passages:\n{context}",
                 },
             ],
-            text={
-                "format": {
-                    "type": "json_schema",
-                    "name": "concept_extraction",
-                    "schema": ConceptExtractionSchema.model_json_schema(),
-                    "strict": True,
-                }
-            },
         )
-        extracted = ConceptExtractionSchema.model_validate_json(response.output_text)
+        extracted = ConceptExtractionSchema.model_validate_json(self._response_output_text(response))
         valid_anchors = {f"{result.file_id}#{result.anchor}" for result in retrieval_results}
         updates: list[ConceptUpdate] = []
         seen_names: set[str] = set()

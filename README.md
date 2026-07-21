@@ -3,6 +3,7 @@
 [![Release Verification](https://github.com/Arya185/fieldnotes/actions/workflows/release.yml/badge.svg)](https://github.com/Arya185/fieldnotes/actions/workflows/release.yml)
 
 Student with folder full of course PDFs, slides, notes, and CSVs gets grounded answers and quizzes instead of pasting fragments into generic chatbot. Fieldnotes stays local-first, cites source passages for every claim, and keeps outputs traceable back to workspace files. Frontend exposes chat, notebook, quiz, source viewer, developer diagnostics.
+This is for night-before-exam moment when one formula or definition is buried across six weeks of lecture files and brute-force searching stops working.
 
 ## Demo
 
@@ -45,6 +46,8 @@ flowchart TD
 ## Why Responses API
 
 [backend/agent/llm.py](backend/agent/llm.py) uses OpenAI Responses API for function-calling retrieval via `search_index`, strict structured outputs via `json_schema` with `strict: true` for intent routing, quiz generation, and concept extraction, and streamed grounded answer generation. Retrieval path combines BM25, embeddings, and reranking so answers stay tied to best matching workspace passages before response generation.
+
+More specifically, [backend/agent/llm.py](backend/agent/llm.py) depends on `LLMClient.resolve_retrieval()` running `SEARCH_INDEX_TOOL` through function calls and then sending tool results back through `function_call_output` before answer generation continues. Same file also uses strict `json_schema` outputs in separate paths for `LLMClient.classify_intent()` with `RouteIntentSchema`, `LLMClient.generate_quiz_question()` with `QuizQuestionSchema`, and `LLMClient.extract_concepts()` with `ConceptExtractionSchema`. Streamed token output from `LLMClient.stream_grounded_answer()` is then forwarded by [backend/services/ask.py](backend/services/ask.py) into SSE `token` events, so replacing provider requires equivalent support across tool calling, strict schema validation, and streaming.
 
 > **No OpenAI key?** App runs in deterministic fake-LLM mode automatically. No cost, no key needed to try it.
 
@@ -154,9 +157,12 @@ Edit `.env`:
 ```bash
 OPENAI_API_KEY=your_key
 OPENAI_MODEL=gpt-5
+OPENAI_BASE_URL=
 ```
 
 No API key required for local startup. If `OPENAI_API_KEY` is absent, Fieldnotes starts automatically in fake LLM mode. If `OPENAI_API_KEY` is present, Fieldnotes starts automatically in live OpenAI mode. No manual mode switch required.
+
+OpenAI-compatible providers can override endpoint with `OPENAI_BASE_URL`. For NVIDIA-hosted `openai/gpt-oss-120b`, set `OPENAI_MODEL=openai/gpt-oss-120b` and `OPENAI_BASE_URL=https://integrate.api.nvidia.com/v1`. Fieldnotes keeps native OpenAI Responses API path when `OPENAI_BASE_URL` is empty and switches to OpenAI-compatible Chat Completions transport when custom base URL is set.
 
 Optional explicit fake-mode override in `.env`:
 
@@ -231,30 +237,35 @@ Optional live OpenAI validation runs in separate `live-openai-validation` job on
 
 ## Performance
 
-Measured locally on `2026-07-20` in `fake-LLM mode`.
+Measured locally on `2026-07-21` in `fake-LLM mode`.
 
 Built-in `scripts/run_benchmarks.py` minimal fixture:
 
 - Indexed files: `2`
 - Indexed chunks: `2`
-- Indexing time: `17.39 ms`
-- Ask execution time (`executor_latency_ms`): `533.68 ms`
-- Retrieval latency: `0.15 ms`
-- Sandbox execution time: `532.20 ms`
+- Frontend build time: `1783.40 ms`
+- Indexing time: `12.63 ms`
+- Ask execution time (`executor_latency_ms`): `375.79 ms`
+- Retrieval latency: `0.12 ms`
+- Sandbox execution time: `374.63 ms`
+- Retrieval quality (`top_k=5`, 1 labeled query): before rerank `Precision@5 1.00`, `Recall@5 1.00`; after rerank `Precision@5 1.00`, `Recall@5 1.00`
 
 `demo_course/` via `python scripts/run_benchmarks.py --workspace demo_course`:
 
 - Indexed files: `3`
 - Indexed chunks: `6`
-- Indexing time: `53.77 ms`
-- Ask execution time (`executor_latency_ms`): `508.81 ms`
-- Retrieval latency: `0.25 ms`
-- Sandbox execution time: `507.27 ms`
+- Frontend build time: `2071.29 ms`
+- Indexing time: `47.83 ms`
+- Ask execution time (`executor_latency_ms`): `369.02 ms`
+- Retrieval latency: `0.18 ms`
+- Sandbox execution time: `367.65 ms`
+- Retrieval quality (`tests/fixtures/demo_course_retrieval_eval.json`, 12 labeled queries, `top_k=5`): before rerank `Precision@5 0.5139`, `Recall@5 0.9167`, `MRR 0.9167`; after rerank `Precision@5 0.5139`, `Recall@5 0.9167`, `MRR 0.9167`
 
 Notes:
 
 - Both entries above use same fake-LLM executor flow and include frontend build step inside benchmark run.
 - `scripts/run_benchmarks.py` now accepts optional `--workspace` path while keeping minimal built-in fixture as default behavior.
+- Retrieval-quality pass currently measures expected-anchor hit quality on persisted retrieval chunks, with and without reranking, against labeled `demo_course/` questions. On this tiny corpus, reranker changed ordering in some cases but produced no aggregate lift on `Recall@5`, `Precision@5`, or `MRR`.
 
 ## Documentation Index
 

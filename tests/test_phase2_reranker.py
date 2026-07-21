@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 import unittest
@@ -16,6 +17,7 @@ from backend.indexer.pipeline import run_indexing
 from backend.indexer.reranker import DeterministicReranker
 from backend.indexer.vectors import HybridProvider
 from backend.storage import file_id_for_path
+from scripts.run_benchmarks import DEMO_COURSE_RETRIEVAL_FIXTURE_PATH, load_retrieval_fixture
 
 
 def build_workspace(root: Path, filename: str, contents: str) -> None:
@@ -116,6 +118,39 @@ class Phase2RerankerTests(unittest.TestCase):
         self.assertGreaterEqual(comparison.after.recall_at_5, comparison.before.recall_at_5)
         self.assertGreaterEqual(comparison.after.ndcg_at_5, 0.0)
         self.assertGreaterEqual(comparison.after.ndcg_at_10, 0.0)
+        self.assertGreaterEqual(comparison.after.precision_at_5, 0.0)
+        self.assertGreaterEqual(comparison.after.precision_at_10, 0.0)
+
+    def test_demo_course_retrieval_fixture_loads_expected_anchor_pairs(self) -> None:
+        payload = json.loads(DEMO_COURSE_RETRIEVAL_FIXTURE_PATH.read_text(encoding="utf-8"))
+        benchmarks = load_retrieval_fixture(DEMO_COURSE_RETRIEVAL_FIXTURE_PATH)
+        self.assertEqual(len(payload), len(benchmarks))
+        self.assertGreaterEqual(len(benchmarks), 10)
+        first_expected = f"{file_id_for_path(payload[0]['relative_path'])}#{payload[0]['anchor']}"
+        self.assertEqual(benchmarks[0].relevant_anchors, {first_expected})
+
+    def test_demo_course_retrieval_fixture_reports_precision_and_recall(self) -> None:
+        workspace = Path("demo_course")
+        connection = connect_sqlite(workspace / ".fieldnotes" / "fieldnotes.db")
+        try:
+            provider = HybridProvider(connection, mode="hybrid", bm25_weight=0.5, vector_weight=0.5)
+            comparison = compare_reranking(
+                provider,
+                self.reranker,
+                load_retrieval_fixture(DEMO_COURSE_RETRIEVAL_FIXTURE_PATH),
+                candidate_limit=10,
+            )
+        finally:
+            connection.close()
+
+        self.assertGreaterEqual(comparison.before.recall_at_5, 0.0)
+        self.assertLessEqual(comparison.before.recall_at_5, 1.0)
+        self.assertGreaterEqual(comparison.after.recall_at_5, 0.0)
+        self.assertLessEqual(comparison.after.recall_at_5, 1.0)
+        self.assertGreaterEqual(comparison.before.precision_at_5, 0.0)
+        self.assertLessEqual(comparison.before.precision_at_5, 1.0)
+        self.assertGreaterEqual(comparison.after.precision_at_5, 0.0)
+        self.assertLessEqual(comparison.after.precision_at_5, 1.0)
 
     def test_backward_compatibility_retrievalchunk_shape_unchanged(self) -> None:
         chunk = _chunk("file_a", "alpha.txt", "block1/b1", "pendulum damping")

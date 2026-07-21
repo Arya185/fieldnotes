@@ -1,0 +1,62 @@
+[
+  {
+    "question": "What is title of release demo?",
+    "relative_path": "notes.md",
+    "anchor": "block1/b1"
+  },
+  {
+    "question": "Which source contains phrase Physics II Release Demo?",
+    "relative_path": "notes.md",
+    "anchor": "block1/b1"
+  },
+  {
+    "question": "Which file says retrieval and quizzes stay local to workspace?",
+    "relative_path": "notes.md",
+    "anchor": "block2/b1"
+  },
+  {
+    "question": "Which section mentions source reopening local to workspace?",
+    "relative_path": "notes.md",
+    "anchor": "block2/b1"
+  },
+  {
+    "question": "Which source mentions notebook artifacts?",
+    "relative_path": "notes.md",
+    "anchor": "block2/b1"
+  },
+  {
+    "question": "Where is pendulum investigation heading?",
+    "relative_path": "notes.md",
+    "anchor": "block3/b1"
+  },
+  {
+    "question": "Which passage says Trial 4 damps much faster than Trials 1 to 3?",
+    "relative_path": "notes.md",
+    "anchor": "block4/b1"
+  },
+  {
+    "question": "Which source says compare chart output against course notes?",
+    "relative_path": "notes.md",
+    "anchor": "block4/b1"
+  },
+  {
+    "question": "Which source says use quiz flow to review damping concept?",
+    "relative_path": "notes.md",
+    "anchor": "block4/b1"
+  },
+  {
+    "question": "Which source says Trial 4 damping changes faster than others?",
+    "relative_path": "pendulum_summary.pdf",
+    "anchor": "p1/b1"
+  },
+  {
+    "question": "Which file is CSV schema anchor for pendulum data?",
+    "relative_path": "pendulum.csv",
+    "anchor": "schema/b1"
+  },
+  {
+    "question": "Which dataset contains trial time amplitude columns?",
+    "relative_path": "pendulum.csv",
+    "anchor": "schema/b1"
+  }
+]

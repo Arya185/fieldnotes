@@ -48,6 +48,7 @@ Edit `.env` and set:
 ```bash
 OPENAI_API_KEY=your_key
 OPENAI_MODEL=gpt-5
+OPENAI_BASE_URL=
 ```
 
 Optional fake mode in `.env`:
@@ -57,6 +58,8 @@ FIELDNOTES_USE_FAKE_LLM=1
 ```
 
 No API key required for local startup. If `OPENAI_API_KEY` is absent, Fieldnotes starts automatically in fake mode. If `OPENAI_API_KEY` is present, Fieldnotes starts automatically in live mode with configured `OPENAI_MODEL` or project default. No config edits required to switch between modes.
+
+OpenAI-compatible providers can set `OPENAI_BASE_URL` to alternate endpoint. Example: `OPENAI_MODEL=openai/gpt-oss-120b` with `OPENAI_BASE_URL=https://integrate.api.nvidia.com/v1`.
 
 Setting `FIELDNOTES_USE_FAKE_LLM=1` still forces fake mode when no API key is present. `OPENAI_API_KEY` always takes precedence over fake-mode flag.
 

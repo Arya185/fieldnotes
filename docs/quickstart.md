@@ -10,9 +10,13 @@ Edit `.env`:
 
 ```bash
 OPENAI_API_KEY=your_key
+OPENAI_MODEL=gpt-5
+OPENAI_BASE_URL=
 ```
 
 No API key required for local startup. If `OPENAI_API_KEY` is absent, Fieldnotes starts automatically in fake mode. Adding `OPENAI_API_KEY` switches startup to live OpenAI automatically.
+
+For OpenAI-compatible providers, set both `OPENAI_MODEL` and `OPENAI_BASE_URL`. Example: `OPENAI_MODEL=openai/gpt-oss-120b` and `OPENAI_BASE_URL=https://integrate.api.nvidia.com/v1`.
 
 Then start backend:
 

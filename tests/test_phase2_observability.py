@@ -106,6 +106,7 @@ class Phase2ObservabilityTests(unittest.TestCase):
             benchmark_module.RELEASE_RESULTS_PATH = original_release_path
         self.assertIn("latency_summary", result)
         self.assertIn("retrieval_metrics", result)
+        self.assertIn("retrieval_quality_eval", result)
         self.assertIn("execution_metrics", result)
         self.assertTrue(results_path.exists())
         loaded = load_benchmark_results(results_path)

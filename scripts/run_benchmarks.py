@@ -44,6 +44,7 @@ from scripts.subprocess_utils import npm_command
 
 RESULTS_PATH = ROOT_DIR / "scripts" / "benchmarks_latest.json"
 RELEASE_RESULTS_PATH = RELEASE_ARTIFACTS_DIR / "release_benchmarks.json"
+DEMO_COURSE_RETRIEVAL_FIXTURE_PATH = ROOT_DIR / "tests" / "fixtures" / "demo_course_retrieval_eval.json"
 
 
 def build_csv_workspace(root: Path) -> None:
@@ -100,6 +101,27 @@ def build_retrieval_benchmark(workspace: Path) -> RetrievalBenchmark:
     )
 
 
+def load_retrieval_fixture(fixture_path: Path) -> list[RetrievalBenchmark]:
+    payload = json.loads(fixture_path.read_text(encoding="utf-8"))
+    benchmarks: list[RetrievalBenchmark] = []
+    for row in payload:
+        relative_path = row["relative_path"]
+        anchor = row["anchor"]
+        expected = f"{file_id_for_path(relative_path)}#{anchor}"
+        benchmarks.append(
+            RetrievalBenchmark(
+                query=row["question"],
+                relevant_anchors={expected},
+                relevance_by_anchor={expected: 1},
+            )
+        )
+    return benchmarks
+
+
+def benchmark_label_for_workspace(workspace: Path) -> str:
+    return workspace.resolve().name
+
+
 def run_benchmarks(
     *,
     workspace: Path | None = None,
@@ -138,6 +160,16 @@ def run_benchmarks(
                 provider,
                 reranker,
                 [retrieval_benchmark],
+            )
+            retrieval_eval_benchmarks = (
+                load_retrieval_fixture(DEMO_COURSE_RETRIEVAL_FIXTURE_PATH)
+                if benchmark_workspace.resolve() == (ROOT_DIR / "demo_course").resolve()
+                else [retrieval_benchmark]
+            )
+            retrieval_eval_comparison = compare_reranking(
+                provider,
+                reranker,
+                retrieval_eval_benchmarks,
             )
 
             plan = ExecutionPlan(
@@ -180,6 +212,18 @@ def run_benchmarks(
         "retrieval_metrics": {
             "before": retrieval_comparison.before.__dict__,
             "after": retrieval_comparison.after.__dict__,
+        },
+        "retrieval_quality_eval": {
+            "workspace": benchmark_label_for_workspace(benchmark_workspace),
+            "fixture_path": (
+                str(DEMO_COURSE_RETRIEVAL_FIXTURE_PATH.relative_to(ROOT_DIR))
+                if benchmark_workspace.resolve() == (ROOT_DIR / "demo_course").resolve()
+                else None
+            ),
+            "case_count": len(retrieval_eval_benchmarks),
+            "top_k": 5,
+            "before": retrieval_eval_comparison.before.__dict__,
+            "after": retrieval_eval_comparison.after.__dict__,
         },
         "execution_metrics": execution_metrics.__dict__,
         "regression_comparison": build_regression(previous, metrics_registry.snapshot()),

@@ -24,9 +24,9 @@ from backend.config import (
 )
 from backend.db import connect_sqlite, latest_storage_warning_message
 from backend.errors import error_response, request_id_for
-from backend.indexer.events import run_manager
+from backend.indexer.events import RunManager, run_manager
 from backend.indexer.pipeline import run_indexing
-from backend.indexer.workspace_manager import WorkspaceRecord, workspace_manager
+from backend.indexer.workspace_manager import WorkspaceManager, WorkspaceRecord, workspace_manager
 from backend.models import (
     AskRequest,
     IndexRequest,
@@ -76,6 +76,14 @@ app.add_middleware(
 llm_client: LLMClient | object | None = None
 
 
+def get_workspace_manager() -> WorkspaceManager:
+    return workspace_manager
+
+
+def get_run_manager() -> RunManager:
+    return run_manager
+
+
 @app.exception_handler(ConfigurationError)
 async def configuration_error_handler(_request: Request, exc: ConfigurationError) -> JSONResponse:
     return error_response(exc=exc, request_id="req_startup", context={"route": "configuration"})
@@ -102,7 +110,7 @@ async def generic_exception_handler(request: Request, exc: Exception) -> JSONRes
 
 
 @app.get("/health")
-async def get_health() -> dict[str, str]:
+async def get_health(manager: WorkspaceManager = Depends(get_workspace_manager)) -> dict[str, str]:
     diagnostics = getattr(app.state, "diagnostics", None)
     mode = determine_llm_mode()
     version = diagnostics.version if diagnostics is not None else FIELDNOTES_VERSION
@@ -112,7 +120,7 @@ async def get_health() -> dict[str, str]:
         "mode": mode,
         "startup": "healthy",
     }
-    registry_warning = workspace_manager.last_recovery_warning()
+    registry_warning = manager.last_recovery_warning()
     if registry_warning:
         payload["registry_warning"] = registry_warning
     storage_warning = latest_storage_warning_message()
@@ -122,13 +130,18 @@ async def get_health() -> dict[str, str]:
 
 
 @app.post("/index", status_code=202)
-async def post_index(request: IndexRequest, http_request: Request) -> IndexAcceptedResponse:
+async def post_index(
+    request: IndexRequest,
+    http_request: Request,
+    manager: WorkspaceManager = Depends(get_workspace_manager),
+    runs: RunManager = Depends(get_run_manager),
+) -> IndexAcceptedResponse:
     """Start background indexing run for a workspace folder."""
 
     _reject_browser_origin(http_request)
     workspace_root = Path(request.folder_path).expanduser().resolve()
-    workspace_record = workspace_manager.register(workspace_root)
-    run_id, event_hub = run_manager.create_run()
+    workspace_record = manager.register(workspace_root)
+    run_id, event_hub = runs.create_run()
     asyncio.create_task(
         asyncio.to_thread(run_indexing, workspace_root, workspace_record.workspace_id, event_hub)
     )
@@ -141,10 +154,13 @@ async def post_index(request: IndexRequest, http_request: Request) -> IndexAccep
 
 
 @app.get("/index/events/{run_id}")
-async def get_index_events(run_id: str) -> StreamingResponse:
+async def get_index_events(
+    run_id: str,
+    runs: RunManager = Depends(get_run_manager),
+) -> StreamingResponse:
     """Stream indexing progress events over SSE."""
 
-    hub = run_manager.get_hub(run_id)
+    hub = runs.get_hub(run_id)
     if hub is None:
         raise HTTPException(status_code=404, detail="Unknown run_id")
 
@@ -190,8 +206,11 @@ async def post_quiz_answer(request: QuizAnswerRequest, http_request: Request) ->
     )
 
 
-def get_workspace_record(workspace_id: str) -> WorkspaceRecord:
-    workspace_record = workspace_manager.get(workspace_id)
+def get_workspace_record(
+    workspace_id: str,
+    manager: WorkspaceManager = Depends(get_workspace_manager),
+) -> WorkspaceRecord:
+    workspace_record = manager.get(workspace_id)
     if workspace_record is None:
         raise HTTPException(status_code=404, detail="Unknown workspace_id")
     return workspace_record

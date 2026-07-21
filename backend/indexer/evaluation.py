@@ -17,6 +17,8 @@ class RetrievalBenchmark:
 
 @dataclass(frozen=True)
 class RetrievalMetrics:
+    precision_at_5: float
+    precision_at_10: float
     recall_at_5: float
     recall_at_10: float
     mrr: float
@@ -57,6 +59,8 @@ def evaluate_benchmarks(
 
     if not benchmarks:
         return RetrievalMetrics(
+            precision_at_5=0.0,
+            precision_at_10=0.0,
             recall_at_5=0.0,
             recall_at_10=0.0,
             mrr=0.0,
@@ -66,6 +70,8 @@ def evaluate_benchmarks(
 
     recall5_hits = 0
     recall10_hits = 0
+    precision5_total = 0.0
+    precision10_total = 0.0
     reciprocal_ranks = 0.0
     ndcg5_total = 0.0
     ndcg10_total = 0.0
@@ -82,6 +88,8 @@ def evaluate_benchmarks(
 
         anchors5 = {f"{row.file_id}#{row.anchor}" for row in top5}
         anchors10 = {f"{row.file_id}#{row.anchor}" for row in top10}
+        precision5_total += len(anchors5 & benchmark.relevant_anchors) / max(len(top5), 1)
+        precision10_total += len(anchors10 & benchmark.relevant_anchors) / max(len(top10), 1)
         if anchors5 & benchmark.relevant_anchors:
             recall5_hits += 1
         if anchors10 & benchmark.relevant_anchors:
@@ -93,6 +101,8 @@ def evaluate_benchmarks(
 
     total = len(benchmarks)
     return RetrievalMetrics(
+        precision_at_5=precision5_total / total,
+        precision_at_10=precision10_total / total,
         recall_at_5=recall5_hits / total,
         recall_at_10=recall10_hits / total,
         mrr=reciprocal_ranks / total,

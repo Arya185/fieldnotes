@@ -271,6 +271,10 @@ class Phase2EmbeddingsTests(unittest.TestCase):
         self.assertEqual(metrics.recall_at_5, 1.0)
         self.assertEqual(metrics.recall_at_10, 1.0)
         self.assertEqual(metrics.mrr, 1.0)
+        self.assertGreaterEqual(metrics.precision_at_5, 0.0)
+        self.assertLessEqual(metrics.precision_at_5, 1.0)
+        self.assertGreaterEqual(metrics.precision_at_10, 0.0)
+        self.assertLessEqual(metrics.precision_at_10, 1.0)
 
     def test_cosine_similarity_handles_identical_vectors(self) -> None:
         self.assertAlmostEqual(cosine_similarity([1.0, 0.0], [1.0, 0.0]), 1.0)

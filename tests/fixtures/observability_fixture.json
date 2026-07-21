@@ -4,7 +4,8 @@
     "frontend_build_timing_ms",
     "latency_summary",
     "regression_comparison",
-    "retrieval_metrics"
+    "retrieval_metrics",
+    "retrieval_quality_eval"
   ],
   "structured_log_keys": [
     "component",

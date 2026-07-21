@@ -8,6 +8,7 @@
 
 - `OPENAI_API_KEY`: enables live Responses API mode automatically when present
 - `OPENAI_MODEL`: defaults to `gpt-5`
+- `OPENAI_BASE_URL`: optional OpenAI-compatible endpoint override; leave empty for native OpenAI Responses API
 - `FIELDNOTES_USE_FAKE_LLM`: `1` requests deterministic internal LLM stub when no API key is present
 - `FIELDNOTES_RETRIEVAL_PROVIDER`: `bm25 | hybrid | vector`
 - `FIELDNOTES_EMBEDDINGS_PROVIDER`: `deterministic`
@@ -46,6 +47,8 @@ Priority order:
 Behavior:
 
 - `OPENAI_API_KEY` present: startup uses live OpenAI mode automatically
+- `OPENAI_BASE_URL` empty: live mode uses native OpenAI Responses API transport
+- `OPENAI_BASE_URL` set: live mode uses OpenAI-compatible Chat Completions transport against custom endpoint
 - no API key and `FIELDNOTES_USE_FAKE_LLM=1`: startup uses fake mode
 - no API key and no fake flag: startup still succeeds and falls back to fake mode
 

@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import os
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from backend.agent.llm import (
+    LLMClient,
     ResponsesAPIProbeError,
     verify_responses_api_connection,
 )
@@ -52,6 +53,34 @@ class LiveResponsesAPIIntegrationTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ResponsesAPIProbeError, "timed out"):
             verify_responses_api_connection(model="gpt-live", client=fake_client, timeout_seconds=0.01)
+
+    def test_custom_base_url_uses_chat_completions_compat_path(self) -> None:
+        fake_client = Mock()
+        fake_client.chat.completions.create.return_value = Mock(
+            choices=[Mock(message=Mock(content='{"status":"ok"}'))]
+        )
+
+        result = verify_responses_api_connection(
+            model="openai/gpt-oss-120b",
+            api_key="secret",
+            base_url="https://integrate.api.nvidia.com/v1",
+            client=fake_client,
+        )
+
+        self.assertEqual(result.model, "openai/gpt-oss-120b")
+        fake_client.chat.completions.create.assert_called_once()
+        fake_client.responses.create.assert_not_called()
+
+    def test_llm_client_passes_custom_base_url_to_openai_sdk(self) -> None:
+        with patch("backend.agent.llm.OpenAI", autospec=True) as mock_openai:
+            LLMClient(
+                model="openai/gpt-oss-120b",
+                api_key="secret",
+                base_url="https://integrate.api.nvidia.com/v1",
+            )
+
+        _, kwargs = mock_openai.call_args
+        self.assertEqual(kwargs["base_url"], "https://integrate.api.nvidia.com/v1")
 
 
 if __name__ == "__main__":
