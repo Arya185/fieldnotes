@@ -14,7 +14,7 @@ export function useIndexStream() {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
-    void openIndexEvents(eventsPath, onEvent, controller.signal).catch((error: Error) => {
+    await openIndexEvents(eventsPath, onEvent, controller.signal).catch((error: Error) => {
       if (error.name === "AbortError") {
         return;
       }

@@ -48,35 +48,56 @@ export function ContextPanelRoute({
   return (
     <aside className="rightbar panel">
       <section className="section context-header">
-        <div className="split-row">
-          <div>
-            <div className="eyebrow">Context Panel</div>
-            <strong>Sources, notebook, study</strong>
+        {contextPanelOpen ? (
+          <div className="split-row">
+            <div>
+              <div className="eyebrow">Context Panel</div>
+              <strong>Sources, notebook, study</strong>
+            </div>
+            <button
+              className="icon-button"
+              onClick={onTogglePanel}
+              aria-label="Collapse context panel"
+            >
+              ›
+            </button>
           </div>
-          <button
-            className="icon-button"
-            onClick={onTogglePanel}
-            aria-label={contextPanelOpen ? "Collapse context panel" : "Expand context panel"}
-          >
-            {contextPanelOpen ? "›" : "‹"}
-          </button>
-        </div>
-      </section>
-
-      <section className="section context-tabs">
-        <button className="tab" aria-selected={contextTab === "sources"} onClick={() => onSetContextTab("sources")}>
-          Sources
-        </button>
-        <button className="tab" aria-selected={contextTab === "notebook"} onClick={() => onSetContextTab("notebook")}>
-          Notebook
-        </button>
-        <button className="tab" aria-selected={contextTab === "quiz"} onClick={() => onSetContextTab("quiz")}>
-          Quiz
-        </button>
+        ) : (
+          <div className="context-rail">
+            <button
+              className="icon-button"
+              onClick={onTogglePanel}
+              aria-label="Expand context panel"
+            >
+              ‹
+            </button>
+            <div className="context-rail-label">
+              <span className="eyebrow">Context</span>
+              <strong>Panel</strong>
+            </div>
+            <div className="context-rail-tabs" aria-hidden="true">
+              <span className="context-rail-pill">S</span>
+              <span className="context-rail-pill">N</span>
+              <span className="context-rail-pill">Q</span>
+            </div>
+          </div>
+        )}
       </section>
 
       {contextPanelOpen && (
         <>
+          <section className="section context-tabs">
+            <button className="tab" aria-selected={contextTab === "sources"} onClick={() => onSetContextTab("sources")}>
+              Sources
+            </button>
+            <button className="tab" aria-selected={contextTab === "notebook"} onClick={() => onSetContextTab("notebook")}>
+              Notebook
+            </button>
+            <button className="tab" aria-selected={contextTab === "quiz"} onClick={() => onSetContextTab("quiz")}>
+              Quiz
+            </button>
+          </section>
+
           <section className="section">
             <strong>Workspace Status</strong>
             <div className="grid-two">
