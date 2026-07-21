@@ -5,58 +5,148 @@
     "anchor": "block1/b1"
   },
   {
-    "question": "Which source contains phrase Physics II Release Demo?",
-    "relative_path": "notes.md",
-    "anchor": "block1/b1"
-  },
-  {
-    "question": "Which file says retrieval and quizzes stay local to workspace?",
+    "question": "Which file introduces Fieldnotes as exact-passage study demo?",
     "relative_path": "notes.md",
     "anchor": "block2/b1"
   },
   {
-    "question": "Which section mentions source reopening local to workspace?",
-    "relative_path": "notes.md",
-    "anchor": "block2/b1"
-  },
-  {
-    "question": "Which source mentions notebook artifacts?",
-    "relative_path": "notes.md",
-    "anchor": "block2/b1"
-  },
-  {
-    "question": "Where is pendulum investigation heading?",
+    "question": "Where are week 1 framing bullets listed?",
     "relative_path": "notes.md",
     "anchor": "block3/b1"
   },
   {
-    "question": "Which passage says Trial 4 damps much faster than Trials 1 to 3?",
+    "question": "Which passage says small-angle period is mostly set by length?",
     "relative_path": "notes.md",
     "anchor": "block4/b1"
   },
   {
-    "question": "Which source says compare chart output against course notes?",
+    "question": "Which source says Trial 4 damps much faster because felt pad friction was added near pivot?",
     "relative_path": "notes.md",
+    "anchor": "block6/b1"
+  },
+  {
+    "question": "Which notes say reopen source cards when answer cites week 4 slides or problem set?",
+    "relative_path": "notes.md",
+    "anchor": "block8/b1"
+  },
+  {
+    "question": "Which lecture notes say mass does not appear in ideal period formula?",
+    "relative_path": "week02_period_and_forces.md",
+    "anchor": "block2/b1"
+  },
+  {
+    "question": "Where is restoring force described as acting along arc toward equilibrium?",
+    "relative_path": "week02_period_and_forces.md",
+    "anchor": "block3/b1"
+  },
+  {
+    "question": "Which source warns to keep launch angle below fifteen degrees during comparisons?",
+    "relative_path": "week02_period_and_forces.md",
     "anchor": "block4/b1"
   },
   {
-    "question": "Which source says use quiz flow to review damping concept?",
-    "relative_path": "notes.md",
+    "question": "Which notes explain that air drag and pivot friction remove energy so amplitude shrinks over time?",
+    "relative_path": "week03_energy_and_damping.md",
+    "anchor": "block2/b1"
+  },
+  {
+    "question": "Where is difference between underdamped, critically damped, and overdamped motion stated?",
+    "relative_path": "week03_energy_and_damping.md",
+    "anchor": "block3/b1"
+  },
+  {
+    "question": "Which source says sudden damping jump often comes from changed friction source, not broken model?",
+    "relative_path": "week03_energy_and_damping.md",
     "anchor": "block4/b1"
   },
   {
-    "question": "Which source says Trial 4 damping changes faster than others?",
+    "question": "Which handout states goal is to compare amplitude envelopes across four pendulum trials?",
+    "relative_path": "lab_handout.docx",
+    "anchor": "para2/b1"
+  },
+  {
+    "question": "Where does procedure say keep length fixed and release below fifteen degrees?",
+    "relative_path": "lab_handout.docx",
+    "anchor": "para3/b1"
+  },
+  {
+    "question": "Which handout says to label felt pad at pivot clearly before retrieval or quiz review?",
+    "relative_path": "lab_handout.docx",
+    "anchor": "para4/b1"
+  },
+  {
+    "question": "Which problem set asks whether equal-length pendulums with different masses have different periods?",
+    "relative_path": "problem_set_01.docx",
+    "anchor": "para2/b1"
+  },
+  {
+    "question": "Where is question about Trial 4 sharp amplitude decay without changing gravity?",
+    "relative_path": "problem_set_01.docx",
+    "anchor": "para3/b1"
+  },
+  {
+    "question": "Which source asks for difference between underdamped and critically damped motion in one sentence?",
+    "relative_path": "problem_set_01.docx",
+    "anchor": "para4/b1"
+  },
+  {
+    "question": "Which slide deck says compare period, amplitude envelope, and friction source before explaining outlier trial?",
+    "relative_path": "lecture_week04_damping.pptx",
+    "anchor": "s1/b1"
+  },
+  {
+    "question": "Which slide says felt pad increased pivot friction and amplitude falls faster while period stays close?",
+    "relative_path": "lecture_week04_damping.pptx",
+    "anchor": "s2/b1"
+  },
+  {
+    "question": "Where is study checklist that says check CSV schema before analysis?",
+    "relative_path": "lecture_week04_damping.pptx",
+    "anchor": "s3/b1"
+  },
+  {
+    "question": "Which PDF says Trial 4 loses amplitude faster because friction was intentionally increased with felt pad near pivot?",
     "relative_path": "pendulum_summary.pdf",
     "anchor": "p1/b1"
   },
   {
-    "question": "Which file is CSV schema anchor for pendulum data?",
+    "question": "Which summary PDF says separate damping from period before interpreting chart?",
+    "relative_path": "pendulum_summary.pdf",
+    "anchor": "p1/b1"
+  },
+  {
+    "question": "Which review sheet says small-angle period depends mostly on length and gravity?",
+    "relative_path": "week05_review.pdf",
+    "anchor": "p1/b1"
+  },
+  {
+    "question": "Where does review sheet say amplitude decay signals energy loss from drag or friction?",
+    "relative_path": "week05_review.pdf",
+    "anchor": "p1/b1"
+  },
+  {
+    "question": "Which file is schema anchor for pendulum data table?",
     "relative_path": "pendulum.csv",
     "anchor": "schema/b1"
   },
   {
-    "question": "Which dataset contains trial time amplitude columns?",
+    "question": "Which dataset contains trial time amplitude columns for pendulum runs?",
     "relative_path": "pendulum.csv",
+    "anchor": "schema/b1"
+  },
+  {
+    "question": "Which CSV lists weekly topic, deliverable, and source_type columns?",
+    "relative_path": "lab_schedule.csv",
+    "anchor": "schema/b1"
+  },
+  {
+    "question": "Which dataset maps week numbers to deliverables like checkpoint quiz and slide discussion?",
+    "relative_path": "lab_schedule.csv",
+    "anchor": "schema/b1"
+  },
+  {
+    "question": "Which source is schedule CSV for week-by-week pendulum unit plan?",
+    "relative_path": "lab_schedule.csv",
     "anchor": "schema/b1"
   }
 ]

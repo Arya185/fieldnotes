@@ -1,0 +1,43 @@
+FROM node:20-alpine AS frontend-build
+
+WORKDIR /frontend
+
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+
+COPY frontend/ ./
+
+ENV VITE_DEFAULT_WORKSPACE_PATH=/app/demo_course
+RUN npm run build
+
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    FIELDNOTES_USE_FAKE_LLM=1 \
+    PORT=10000 \
+    OPENBLAS_NUM_THREADS=1 \
+    OMP_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1 \
+    NUMEXPR_NUM_THREADS=1
+
+WORKDIR /app
+
+COPY backend/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends nginx gettext-base \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY backend/ /app/backend/
+COPY demo_course/ /app/demo_course/
+COPY --from=frontend-build /frontend/dist /usr/share/nginx/html
+COPY frontend/nginx.render.conf.template /etc/nginx/templates/default.conf.template
+COPY scripts/start_render.sh /usr/local/bin/start_render.sh
+
+RUN chmod +x /usr/local/bin/start_render.sh
+
+EXPOSE 10000
+
+CMD ["/usr/local/bin/start_render.sh"]

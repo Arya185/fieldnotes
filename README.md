@@ -5,6 +5,13 @@
 Student with folder full of course PDFs, slides, notes, and CSVs gets grounded answers and quizzes instead of pasting fragments into generic chatbot. Fieldnotes stays local-first, cites source passages for every claim, and keeps outputs traceable back to workspace files. Frontend exposes chat, notebook, quiz, source viewer, developer diagnostics.
 This is for night-before-exam moment when one formula or definition is buried across six weeks of lecture files and brute-force searching stops working.
 
+| Compare | Fieldnotes | Generic chatbot workflow |
+|---------|------------|--------------------------|
+| Source citations | Exact citations with click-back-to-passage source reopening | Usually answer text or uploaded-file references without stable passage reopen |
+| Persistent workspace | One indexed workspace stays available across sessions | Often one-off conversation context that must be reassembled |
+| Quiz generation | Quizzes grounded in your own indexed course material | Practice questions may not stay tied to your actual files |
+| Data handling | Local-first workflow; files stay in workspace unless you choose live API mode | Often starts by uploading or pasting material into chat |
+
 ## Demo
 
 | Page | Screenshot |

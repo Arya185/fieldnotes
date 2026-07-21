@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /Users/aryapatel/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/fallback/pnpm "$@"

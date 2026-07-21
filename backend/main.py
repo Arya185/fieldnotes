@@ -294,11 +294,11 @@ def _get_llm_client():
 def _reject_browser_origin(request: Request) -> None:
     origin = request.headers.get("origin")
     referer = request.headers.get("referer")
-    if origin and not _is_trusted_browser_origin(origin):
+    if origin and not _is_trusted_browser_origin(request, origin):
         raise HTTPException(status_code=403, detail="Untrusted browser origin.")
     if referer:
         referer_origin = _origin_from_url(referer)
-        if not _is_trusted_browser_origin(referer_origin):
+        if not _is_trusted_browser_origin(request, referer_origin):
             raise HTTPException(status_code=403, detail="Untrusted browser origin.")
 
 
@@ -309,10 +309,12 @@ def _origin_from_url(value: str) -> str:
     return f"{parts.scheme}://{parts.netloc}"
 
 
-def _is_trusted_browser_origin(origin: str) -> bool:
+def _is_trusted_browser_origin(request: Request, origin: str) -> bool:
     if not origin:
         return True
     if origin in TRUSTED_ORIGINS:
+        return True
+    if origin == _origin_from_url(str(request.base_url)):
         return True
 
     parts = urlsplit(origin)

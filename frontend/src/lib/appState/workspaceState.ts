@@ -19,6 +19,7 @@ import type { ArtifactPreview, ContextTab, NoteOverrides, RouteKey, SourceViewSt
 const PINNED_ARTIFACTS_KEY = "fieldnotes.pinnedArtifacts";
 const NOTE_OVERRIDES_KEY = "fieldnotes.noteOverrides";
 const EMPTY_NOTE_OVERRIDES: NoteOverrides = { hiddenIds: [], pinnedIds: [], renamedTitles: {} };
+const DEFAULT_WORKSPACE_PATH = import.meta.env.VITE_DEFAULT_WORKSPACE_PATH ?? "";
 
 function readPinnedArtifacts(): string[] {
   if (typeof window === "undefined") {
@@ -126,11 +127,15 @@ export function useWorkspaceState({
   const [recentWorkspaces, setRecentWorkspaces] = useState<StoredWorkspaceRecord[]>(loadRecentWorkspaces);
   const [indexHistory, setIndexHistory] = useState<IndexHistoryEntry[]>(loadIndexHistory);
   const [developerMode, setDeveloperMode] = useState<boolean>(loadDeveloperMode);
-  const [folderPath, setFolderPath] = useState("");
+  const [folderPath, setFolderPath] = useState(DEFAULT_WORKSPACE_PATH);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(
     () => loadRecentWorkspaces()[0]?.workspaceId ?? null,
   );
-  const [starterSummary, setStarterSummary] = useState("No workspace indexed yet. Drop workspace path or type absolute folder path.");
+  const [starterSummary, setStarterSummary] = useState(
+    DEFAULT_WORKSPACE_PATH
+      ? `Demo workspace ready at ${DEFAULT_WORKSPACE_PATH}. Click Index Workspace, then ask grounded questions.`
+      : "No workspace indexed yet. Drop workspace path or type absolute folder path.",
+  );
   const [indexEvents, setIndexEvents] = useState<IndexEvent[]>([]);
   const [notebook, setNotebook] = useState<NotebookResponse>({ artifacts: [], file_count: 0, chunk_count: 0 });
   const [artifactFilter, setArtifactFilter] = useState("all");

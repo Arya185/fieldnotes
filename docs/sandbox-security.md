@@ -8,6 +8,10 @@ Fieldnotes executes generated analysis code through `backend/sandbox/runner.py` 
 
 This is AST-based allowlist sandbox, not formally verified sandbox boundary. It mitigates escape techniques covered by `tests/test_sandbox_security.py`, including path traversal, symlink escape, blocked dunder and builtin access, and resource exhaustion, but generated-code execution should still be treated as trusted-input-only feature rather than exposed to untrusted network input.
 
+## Why this much containment for a hackathon project
+
+Generated code execution is one place in Fieldnotes where LLM output turns into untrusted input. Chat, retrieval, and quizzes stay inside normal application control flow; analysis scripts do not. AST allowlist in `backend/sandbox/runtime.py` and OS-level process containment in `backend/sandbox/containment.py` exist because students may run this locally on macOS, Linux, or Windows against real course files. That is why limits cover both POSIX resource controls and Windows Job Objects. Purpose is cross-platform local safety for file-backed analysis, not abstract hardening for its own sake. `tests/test_sandbox_security.py` exercises blocked imports, path traversal, symlink escape, restricted builtins, and resource-limit failures, so this behavior is tested code, not theoretical policy.
+
 ## Guarantees
 
 - Generated code runs in separate Python subprocess, never in backend process.
