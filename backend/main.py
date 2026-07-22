@@ -69,7 +69,7 @@ async def lifespan(application: FastAPI):
 app = FastAPI(title="Fieldnotes API", version=FIELDNOTES_VERSION, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[],
+    allow_origins=sorted(TRUSTED_ORIGINS),
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
