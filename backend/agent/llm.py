@@ -12,7 +12,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from backend.agent.executor import ExecutionContext, Executor
 from backend.agent.planner import ExecutionPlan, Planner, default_plan
-from backend.config import OPENAI_BASE_URL, OPENAI_MODEL
+from backend.config import (
+    DEFAULT_OPENAI_TIMEOUT_SECONDS,
+    OPENAI_BASE_URL,
+    OPENAI_MODEL,
+    env_value,
+    validate_positive_float,
+)
 from backend.indexer.bm25 import RetrievalChunk, RetrievalProvider
 from backend.indexer.reranker import DeterministicReranker
 from backend.models import ArtifactEvent, ConceptUpdate, QuizQuestionSchema, RouteIntentSchema
@@ -156,21 +162,30 @@ class LLMClient:
         self,
         model: str = OPENAI_MODEL,
         *,
-        timeout_seconds: float = 30.0,
+        timeout_seconds: float | None = None,
         api_key: str | None = None,
         base_url: str | None = None,
         client: OpenAI | None = None,
         max_retries: int = 1,
     ) -> None:
         normalized_base_url = (base_url or OPENAI_BASE_URL or "").strip()
+        effective_timeout_seconds = (
+            timeout_seconds
+            if timeout_seconds is not None
+            else validate_positive_float(
+                "FIELDNOTES_OPENAI_TIMEOUT_SECONDS",
+                env_value("FIELDNOTES_OPENAI_TIMEOUT_SECONDS", DEFAULT_OPENAI_TIMEOUT_SECONDS),
+            )
+        )
         self.client = client or OpenAI(
             api_key=api_key,
-            timeout=timeout_seconds,
+            timeout=effective_timeout_seconds,
             max_retries=max_retries,
             base_url=normalized_base_url or None,
         )
         self.model = model
         self.base_url = normalized_base_url
+        self.timeout_seconds = effective_timeout_seconds
         self.use_chat_completions_compat = bool(normalized_base_url)
         self.reranker = DeterministicReranker()
         self.planner = Planner(self.client, self.model)

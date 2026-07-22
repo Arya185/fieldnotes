@@ -249,6 +249,15 @@ class BetaReliabilityTests(unittest.TestCase):
         self.assertEqual(diagnostics.startup_checks["responses_api"], "configured")
         self.assertTrue(any("OpenAI API detected. Running in live mode." in line for line in logs.output))
 
+    def test_openai_timeout_seconds_can_be_configured_from_env(self) -> None:
+        with patch.dict(os.environ, {"FIELDNOTES_OPENAI_TIMEOUT_SECONDS": "75"}, clear=False):
+            client = __import__("backend.agent.llm", fromlist=["LLMClient"]).LLMClient(
+                model="gpt-live",
+                client=object(),
+            )
+
+        self.assertEqual(client.timeout_seconds, 75.0)
+
 
 if __name__ == "__main__":
     unittest.main()

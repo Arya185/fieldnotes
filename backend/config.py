@@ -72,6 +72,7 @@ DEFAULT_USE_FAKE_LLM = "0"
 DEFAULT_OPENAI_MODEL = "openai/gpt-oss-120b"
 DEFAULT_OPENAI_API_KEY = ""
 DEFAULT_OPENAI_BASE_URL = "https://integrate.api.nvidia.com/v1"
+DEFAULT_OPENAI_TIMEOUT_SECONDS = "90"
 DEFAULT_TRUSTED_ORIGINS = (
     "http://localhost:5173,"
     "http://127.0.0.1:5173,"
@@ -96,6 +97,7 @@ USE_FAKE_LLM = os.environ.get("FIELDNOTES_USE_FAKE_LLM", DEFAULT_USE_FAKE_LLM)
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", DEFAULT_OPENAI_MODEL)
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", DEFAULT_OPENAI_API_KEY)
 OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL", DEFAULT_OPENAI_BASE_URL)
+OPENAI_TIMEOUT_SECONDS = os.environ.get("FIELDNOTES_OPENAI_TIMEOUT_SECONDS", DEFAULT_OPENAI_TIMEOUT_SECONDS)
 TRUSTED_ORIGINS = frozenset(
     origin
     for origin in (
@@ -217,6 +219,18 @@ def validate_positive_int(name: str, value: str) -> int:
         parsed = int(value)
     except ValueError as exc:
         raise ConfigurationError(f"{name} must be integer, got: {value}") from exc
+    if parsed <= 0:
+        raise ConfigurationError(f"{name} must be > 0, got: {value}")
+    return parsed
+
+
+def validate_positive_float(name: str, value: str) -> float:
+    """Validate positive float configuration."""
+
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise ConfigurationError(f"{name} must be numeric, got: {value}") from exc
     if parsed <= 0:
         raise ConfigurationError(f"{name} must be > 0, got: {value}")
     return parsed
