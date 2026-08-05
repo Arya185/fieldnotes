@@ -150,6 +150,8 @@ macOS / Linux:
 python -m pip install -r backend/requirements.txt
 ```
 
+`backend/requirements.txt` includes auth dependency `PyJWT>=2.9.0`, which provides Python `jwt` module used by backend auth imports.
+
 Windows PowerShell:
 
 ```powershell
@@ -252,6 +254,8 @@ python scripts/release_check.py
 ## CI Validation
 
 GitHub Actions keeps fake-mode validation on every push and pull request. That workflow installs backend and frontend dependencies, runs backend tests, frontend tests, benchmarks, and release verification with `FIELDNOTES_USE_FAKE_LLM=1`.
+
+Backend dependency install in CI comes from `backend/requirements.txt`, so backend auth/runtime dependencies must be declared there.
 
 Optional live OpenAI validation runs in separate `live-openai-validation` job only when repository secret `OPENAI_API_KEY` is present. Job runs `python scripts/exit_phase0.py` and `python -m unittest tests.test_live_responses_api_integration` against configured live model. Without secret, job is skipped cleanly. Expected runtime: usually under 1 minute. Expected cost: minimal, one tiny probe plus one tiny integration request.
 
