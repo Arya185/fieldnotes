@@ -34,6 +34,7 @@ from backend.storage import (
 from backend.telemetry.tracing import request_metrics_tracker
 
 from .retrieval import load_fallback_retrieval, source_label
+from .evidence import organize_retrieval_results
 
 
 async def stream_ask_events(
@@ -100,6 +101,26 @@ async def stream_ask_events(
             retrieval_results = list(matched_retrieval_results)
             if not retrieval_results and workspace_chunk_count > 0:
                 retrieval_results = load_fallback_retrieval(connection, limit=5)
+
+            # Organize evidence across the workspace: group by document, cluster by topic,
+            # merge duplicates, and identify potential conflicts. This produces a
+            # structured evidence object we pass into the LLM as execution context.
+            organized = organize_retrieval_results(retrieval_results)
+            # Build a human-readable execution_context describing supporting and conflicting evidence
+            evidence_lines = []
+            evidence_lines.append("Supporting Evidence:")
+            for cluster in organized.get("clusters", []):
+                evidence_lines.append(f"Cluster {cluster['cluster_id']} (confidence={cluster['confidence']:.2f}):")
+                evidence_lines.append(cluster["representative"])
+                for c in cluster["citations"]:
+                    evidence_lines.append(f"- document={c['document']} file_id={c['file_id']} anchor={c['anchor']} confidence={c['confidence']:.2f}")
+                evidence_lines.append("")
+            if organized.get("conflicts"):
+                evidence_lines.append("Conflicting Evidence:")
+                for conf in organized["conflicts"]:
+                    evidence_lines.append(f"- conflict between {conf['cluster_a']} and {conf['cluster_b']}: shared_terms={','.join(conf['shared_terms'])}")
+                evidence_lines.append("")
+            execution_evidence_context = "\n".join(evidence_lines)
         finally:
             connection.close()
 
@@ -328,7 +349,7 @@ async def stream_ask_events(
             request.question,
             intent_result.intent,
             retrieval_results,
-            execution_context=execution_context,
+            execution_context=(execution_context or "") + "\n\nEvidence:\n" + execution_evidence_context,
         ):
             if delta:
                 request_metrics.observe_chunk(delta)
@@ -357,20 +378,48 @@ async def stream_ask_events(
             ).model_dump()
         )
 
-        raw_chips = [
-            CitationChip(
-                chip_type="document",
-                label=source_label(result.relative_path, result.anchor),
-                anchor=f"{result.file_id}#{result.anchor}",
+        # Build citation chips enriched with a confidence score in the label.
+        # Use the concrete retrieval_results list if available.
+        candidate_results = retrieval_results if isinstance(retrieval_results, list) else list(retrieval_results)
+        scores = [float(getattr(r, "score", 0.0) or 0.0) for r in candidate_results]
+        if scores:
+            mn = min(scores)
+            mx = max(scores)
+        else:
+            mn = mx = 0.0
+
+        def norm(s: float) -> float:
+            if mx == mn:
+                return 1.0 if s > 0 else 0.0
+            return (s - mn) / (mx - mn)
+
+        raw_chips = []
+        for result in candidate_results:
+            conf = norm(float(getattr(result, "score", 0.0) or 0.0))
+            # attempt to detect a page number from the anchor as a heuristic
+            page = ""
+            import re
+
+            m = re.search(r"(page[:_=\- ]?)(\d+)", result.anchor, flags=re.IGNORECASE)
+            if m:
+                page = m.group(2)
+            label = f"{source_label(result.relative_path, result.anchor)}"
+            label = f"{label} (conf={conf:.2f})"
+            if page:
+                label = f"{label} p{page}"
+            raw_chips.append(
+                CitationChip(
+                    chip_type="document",
+                    label=label,
+                    anchor=f"{result.file_id}#{result.anchor}",
+                )
             )
-            for result in matched_retrieval_results
-        ]
         if code_chip is not None:
             raw_chips.append(code_chip)
 
         concepts = (
-            client.extract_concepts(request.question, matched_retrieval_results)
-            if matched_retrieval_results
+            client.extract_concepts(request.question, retrieval_results)
+            if retrieval_results
             else []
         )
         artifact_event = ArtifactEvent(

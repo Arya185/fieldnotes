@@ -1,6 +1,15 @@
 import type { ArtifactEvent, BenchmarkSummary, CitationChip, ConceptUpdate, IndexEvent, SourceResponse } from "../../types";
 
-export type RouteKey = "workspace" | "chat" | "notebook" | "quiz" | "source" | "developer";
+export type RouteKey =
+  | "workspace"
+  | "chat"
+  | "notebook"
+  | "study"
+  | "study_progress"
+  | "flashcards"
+  | "quiz"
+  | "source"
+  | "developer";
 export type ContextTab = "sources" | "notebook" | "quiz";
 
 export interface ChatMessage {

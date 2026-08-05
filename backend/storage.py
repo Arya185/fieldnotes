@@ -283,6 +283,196 @@ def load_chunks_for_file(connection: sqlite3.Connection, file_id: str) -> list[P
     ]
 
 
+def ensure_study_tables(connection: sqlite3.Connection) -> None:
+    """Create study planner related tables if they do not exist."""
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS topics (
+            id TEXT PRIMARY KEY,
+            topic TEXT NOT NULL,
+            summary TEXT,
+            difficulty TEXT,
+            est_minutes INTEGER,
+            prerequisites_json TEXT,
+            file_id TEXT,
+            mastery_score REAL DEFAULT 0,
+            last_review TEXT,
+            review_count INTEGER DEFAULT 0,
+            quiz_average REAL DEFAULT 0,
+            completion_percentage REAL DEFAULT 0,
+            created_at TEXT
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS topic_dependencies (
+            id TEXT PRIMARY KEY,
+            prereq_id TEXT NOT NULL,
+            topic_id TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS study_plans (
+            id TEXT PRIMARY KEY,
+            title TEXT,
+            exam_date TEXT,
+            hours_per_day REAL,
+            pace TEXT,
+            created_at TEXT
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS study_plan_items (
+            id TEXT PRIMARY KEY,
+            plan_id TEXT NOT NULL,
+            topic_id TEXT,
+            date TEXT NOT NULL,
+            task_type TEXT NOT NULL,
+            duration_minutes INTEGER,
+            completed INTEGER DEFAULT 0,
+            score REAL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS flashcards (
+            id TEXT PRIMARY KEY,
+            topic_id TEXT,
+            card_type TEXT NOT NULL,
+            question TEXT NOT NULL,
+            answer TEXT NOT NULL,
+            difficulty TEXT NOT NULL,
+            bloom_level TEXT NOT NULL,
+            source_document TEXT NOT NULL,
+            source_locator TEXT NOT NULL,
+            source_anchor TEXT NOT NULL,
+            review_interval REAL NOT NULL DEFAULT 0,
+            ease_factor REAL NOT NULL DEFAULT 2.5,
+            next_review TEXT NOT NULL,
+            last_review TEXT,
+            review_count INTEGER NOT NULL DEFAULT 0,
+            mastery_weight REAL NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_flashcards_topic ON flashcards(topic_id)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_flashcards_next_review ON flashcards(next_review)"
+    )
+
+
+def upsert_topic(connection: sqlite3.Connection, topic_id: str, topic: str, summary: str | None, difficulty: str | None, est_minutes: int | None, prerequisites_json: str | None, file_id: str | None) -> None:
+    connection.execute(
+        """
+        INSERT INTO topics (id, topic, summary, difficulty, est_minutes, prerequisites_json, file_id, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          topic = excluded.topic,
+          summary = excluded.summary,
+          difficulty = excluded.difficulty,
+          est_minutes = excluded.est_minutes,
+          prerequisites_json = excluded.prerequisites_json,
+          file_id = excluded.file_id
+        """,
+        (topic_id, topic, summary, difficulty, est_minutes, prerequisites_json, file_id, utc_now_iso()),
+    )
+
+
+def get_topic(connection: sqlite3.Connection, topic_id: str) -> dict | None:
+    row = connection.execute("SELECT * FROM topics WHERE id = ?", (topic_id,)).fetchone()
+    return None if row is None else dict(row)
+
+
+def set_topic_progress(
+    connection: sqlite3.Connection,
+    topic_id: str,
+    mastery_score: float | None = None,
+    last_review: str | None = None,
+    review_count: int | None = None,
+    quiz_average: float | None = None,
+    completion_percentage: float | None = None,
+) -> None:
+    updates = []
+    params = []
+    if mastery_score is not None:
+        updates.append("mastery_score = ?")
+        params.append(mastery_score)
+    if last_review is not None:
+        updates.append("last_review = ?")
+        params.append(last_review)
+    if review_count is not None:
+        updates.append("review_count = ?")
+        params.append(review_count)
+    if quiz_average is not None:
+        updates.append("quiz_average = ?")
+        params.append(quiz_average)
+    if completion_percentage is not None:
+        updates.append("completion_percentage = ?")
+        params.append(completion_percentage)
+    if not updates:
+        return
+    params.append(topic_id)
+    sql = f"UPDATE topics SET {', '.join(updates)} WHERE id = ?"
+    connection.execute(sql, params)
+
+
+def list_topics(connection: sqlite3.Connection) -> list[dict]:
+    rows = connection.execute("SELECT * FROM topics ORDER BY topic").fetchall()
+    return [dict(row) for row in rows]
+
+
+def insert_study_plan(connection: sqlite3.Connection, plan_id: str, title: str, exam_date: str, hours_per_day: float, pace: str) -> None:
+    connection.execute(
+        """
+        INSERT INTO study_plans (id, title, exam_date, hours_per_day, pace, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (plan_id, title, exam_date, hours_per_day, pace, utc_now_iso()),
+    )
+
+
+def insert_study_plan_item(connection: sqlite3.Connection, item_id: str, plan_id: str, topic_id: str | None, date: str, task_type: str, duration_minutes: int) -> None:
+    connection.execute(
+        """
+        INSERT INTO study_plan_items (id, plan_id, topic_id, date, task_type, duration_minutes, completed)
+        VALUES (?, ?, ?, ?, ?, ?, 0)
+        """,
+        (item_id, plan_id, topic_id, date, task_type, duration_minutes),
+    )
+
+
+def list_study_plans(connection: sqlite3.Connection) -> list[dict]:
+    rows = connection.execute("SELECT * FROM study_plans ORDER BY created_at DESC").fetchall()
+    return [dict(row) for row in rows]
+
+
+def load_study_plan_items(connection: sqlite3.Connection, plan_id: str) -> list[dict]:
+    rows = connection.execute("SELECT * FROM study_plan_items WHERE plan_id = ? ORDER BY date", (plan_id,)).fetchall()
+    return [dict(row) for row in rows]
+
+
+def mark_study_plan_item_completed(connection: sqlite3.Connection, item_id: str) -> None:
+    connection.execute(
+        "UPDATE study_plan_items SET completed = 1 WHERE id = ?",
+        (item_id,),
+    )
+
+
+def add_review_item(connection: sqlite3.Connection, plan_id: str, topic_id: str | None, date: str, duration_minutes: int) -> str:
+    item_id = f"item_{uuid4().hex[:8]}"
+    insert_study_plan_item(connection, item_id, plan_id, topic_id, date, "review", duration_minutes)
+    return item_id
+
+
 def load_embedding_hashes(
     connection: sqlite3.Connection,
     chunk_ids: list[str],
@@ -631,3 +821,129 @@ def record_quiz_answer(
         (chosen_index, is_correct, attempt_id),
     )
     return load_quiz_attempt(connection, attempt_id)
+
+
+def insert_flashcard(connection: sqlite3.Connection, card: dict) -> None:
+    """Persist one generated flashcard."""
+
+    connection.execute(
+        """
+        INSERT INTO flashcards (
+          id, topic_id, card_type, question, answer, difficulty, bloom_level,
+          source_document, source_locator, source_anchor, review_interval, ease_factor,
+          next_review, last_review, review_count, mastery_weight, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            card["id"],
+            card["topic_id"],
+            card["card_type"],
+            card["question"],
+            card["answer"],
+            card["difficulty"],
+            card["bloom_level"],
+            card["source_document"],
+            card["source_locator"],
+            card["source_anchor"],
+            card["review_interval"],
+            card["ease_factor"],
+            card["next_review"],
+            card["last_review"],
+            card["review_count"],
+            card["mastery_weight"],
+            card["created_at"],
+        ),
+    )
+
+
+def get_flashcard(connection: sqlite3.Connection, flashcard_id: str) -> dict | None:
+    """Load one persisted flashcard by ID."""
+
+    row = connection.execute(
+        "SELECT * FROM flashcards WHERE id = ?", (flashcard_id,)
+    ).fetchone()
+    return None if row is None else dict(row)
+
+
+def list_flashcards(
+    connection: sqlite3.Connection,
+    *,
+    topic_id: str | None = None,
+    due_only: bool = False,
+    as_of: str | None = None,
+) -> list[dict]:
+    """List persisted flashcards, optionally scoped to one topic or due-only."""
+
+    clauses: list[str] = []
+    params: list[object] = []
+    if topic_id is not None:
+        clauses.append("topic_id = ?")
+        params.append(topic_id)
+    if due_only:
+        clauses.append("next_review <= ?")
+        params.append(as_of or utc_now_iso()[:10])
+    query = "SELECT * FROM flashcards"
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY next_review ASC, created_at ASC"
+    rows = connection.execute(query, params).fetchall()
+    return [dict(row) for row in rows]
+
+
+def count_flashcards_for_topic(connection: sqlite3.Connection, topic_id: str) -> int:
+    """Count persisted flashcards for one topic."""
+
+    row = connection.execute(
+        "SELECT COUNT(*) AS count FROM flashcards WHERE topic_id = ?", (topic_id,)
+    ).fetchone()
+    return int(row["count"] or 0)
+
+
+def update_flashcard_review(
+    connection: sqlite3.Connection,
+    flashcard_id: str,
+    *,
+    ease_factor: float,
+    review_interval: float,
+    next_review: str,
+    last_review: str,
+    review_count: int,
+    mastery_weight: float,
+) -> None:
+    """Persist spaced-repetition review outcome for one flashcard."""
+
+    connection.execute(
+        """
+        UPDATE flashcards
+        SET ease_factor = ?, review_interval = ?, next_review = ?, last_review = ?,
+            review_count = ?, mastery_weight = ?
+        WHERE id = ?
+        """,
+        (
+            ease_factor,
+            review_interval,
+            next_review,
+            last_review,
+            review_count,
+            mastery_weight,
+            flashcard_id,
+        ),
+    )
+
+
+def avg_flashcard_mastery_for_topic(
+    connection: sqlite3.Connection, topic_id: str
+) -> float | None:
+    """Average mastery_weight across reviewed flashcards for one topic."""
+
+    row = connection.execute(
+        """
+        SELECT AVG(mastery_weight) AS avg_mastery, COUNT(*) AS count
+        FROM flashcards
+        WHERE topic_id = ? AND review_count > 0
+        """,
+        (topic_id,),
+    ).fetchone()
+    if row is None or int(row["count"] or 0) == 0:
+        return None
+    return float(row["avg_mastery"] or 0.0)

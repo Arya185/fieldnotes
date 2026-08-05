@@ -1,14 +1,15 @@
 import { useRef } from "react";
 
 import { Composer } from "./components/Composer";
-import {
-  useFieldnotesApp,
-} from "./lib/appState";
+import { useFieldnotesApp } from "./lib/appState";
 import { AppSidebar } from "./routes/AppSidebar";
 import { ChatRoute } from "./routes/ChatRoute";
 import { ContextPanelRoute } from "./routes/ContextPanelRoute";
 import { DeveloperRoute } from "./routes/DeveloperRoute";
 import { NotebookRoute } from "./routes/NotebookRoute";
+import { StudyPlannerRoute } from "./routes/StudyPlannerRoute";
+import { StudyProgressRoute } from "./routes/StudyProgressRoute";
+import { FlashcardsRoute } from "./routes/FlashcardsRoute";
 import { QuizRoute } from "./routes/QuizRoute";
 import { SourceRoute } from "./routes/SourceRoute";
 import { WorkspaceRoute } from "./routes/WorkspaceRoute";
@@ -45,9 +46,14 @@ export default function App() {
         onSetDragActive={app.setDragActive}
         onDropWorkspace={app.handleDropWorkspace}
         onIndexWorkspace={() => void app.handleIndex(app.folderPath)}
-        onReindexWorkspace={() => app.activeWorkspace && void app.handleIndex(app.activeWorkspace.folderPath)}
+        onReindexWorkspace={() =>
+          app.activeWorkspace &&
+          void app.handleIndex(app.activeWorkspace.folderPath)
+        }
         onClearWorkspace={app.clearActiveWorkspace}
-        onToggleDeveloperMode={() => app.setDeveloperMode((current) => !current)}
+        onToggleDeveloperMode={() =>
+          app.setDeveloperMode((current) => !current)
+        }
         onSelectWorkspace={(workspaceId) => {
           app.setActiveWorkspaceId(workspaceId);
           app.setRoute("chat");
@@ -60,9 +66,18 @@ export default function App() {
       <main className="main-panel panel">
         <header className="main-header modern-header">
           <div className="main-header-copy">
-            <div className="tabs" role="tablist" aria-label="Primary navigation">
+            <div
+              className="tabs"
+              role="tablist"
+              aria-label="Primary navigation"
+            >
               {app.visibleRoutes.map((item) => (
-                <button key={item} className="tab" aria-selected={app.route === item} onClick={() => app.setRoute(item)}>
+                <button
+                  key={item}
+                  className="tab"
+                  aria-selected={app.route === item}
+                  onClick={() => app.setRoute(item)}
+                >
                   {item}
                 </button>
               ))}
@@ -72,19 +87,64 @@ export default function App() {
                 <h2>{app.currentTitle}</h2>
                 <p className="muted">{app.statusMessage}</p>
               </div>
-              {app.route === "chat" && (
-                <div className="toolbar compact">
-                  <button className="context-toggle" onClick={() => { app.setContextTab("sources"); app.setContextPanelOpen((current) => !current); }}>
+              <div className="toolbar compact">
+                {app.authLoading ? (
+                  <span className="pill">Checking auth...</span>
+                ) : app.authStatus?.auth_enabled ? (
+                  app.authStatus.authenticated ? (
+                    <>
+                      <span className="pill">{app.authStatus.user?.email}</span>
+                      <button className="button ghost" onClick={app.logout}>
+                        Logout
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        className="button"
+                        onClick={() => void app.loginWithProvider("google")}
+                      >
+                        Login with Google
+                      </button>
+                      <button
+                        className="button ghost"
+                        onClick={() => void app.loginWithProvider("github")}
+                      >
+                        Login with GitHub
+                      </button>
+                    </>
+                  )
+                ) : (
+                  <span className="pill">Local mode</span>
+                )}
+                {app.route === "chat" && (
+                  <button
+                    className="context-toggle"
+                    onClick={() => {
+                      app.setContextTab("sources");
+                      app.setContextPanelOpen((current) => !current);
+                    }}
+                  >
                     {app.contextPanelOpen ? "Hide Context" : "Show Context"}
                   </button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
-            {app.recoveryMessage && <p className="error-banner" role="status">{app.recoveryMessage}</p>}
-            {app.errorMessage && <p className="error-banner" role="alert">{app.errorMessage}</p>}
+            {app.recoveryMessage && (
+              <p className="error-banner" role="status">
+                {app.recoveryMessage}
+              </p>
+            )}
+            {app.errorMessage && (
+              <p className="error-banner" role="alert">
+                {app.errorMessage}
+              </p>
+            )}
           </div>
           <div className="header-badges">
-            <div className="pill">{app.activeWorkspace?.title ?? "No workspace selected"}</div>
+            <div className="pill">
+              {app.activeWorkspace?.title ?? "No workspace selected"}
+            </div>
             <div className="pill">{app.indexedDocumentCount} docs</div>
           </div>
         </header>
@@ -124,14 +184,23 @@ export default function App() {
               onExportConversation={() => void app.exportConversation()}
               onSetChatInput={app.setChatInput}
               onCopyAnswer={(message) => void app.copyAnswer(message)}
-              onRequestAnswer={(question) => void app.requestAnswer(question, "regenerate")}
-              onOpenArtifact={(artifact) => void app.handleOpenArtifact(artifact)}
+              onRequestAnswer={(question) =>
+                void app.requestAnswer(question, "regenerate")
+              }
+              onOpenArtifact={(artifact) =>
+                void app.handleOpenArtifact(artifact)
+              }
               onJumpToSource={(anchor) => void app.handleJumpToSource(anchor)}
               onCopyCitation={(chip) => void app.copyCitation(chip)}
               onToggleAccordion={(messageId, open) =>
-                app.setSourceAccordionState((current) => ({ ...current, [messageId]: open }))
+                app.setSourceAccordionState((current) => ({
+                  ...current,
+                  [messageId]: open,
+                }))
               }
-              onToggleAllSources={() => app.setAllSourcesExpanded((current) => !current)}
+              onToggleAllSources={() =>
+                app.setAllSourcesExpanded((current) => !current)
+              }
             />
           )}
 
@@ -150,10 +219,14 @@ export default function App() {
               onSetArtifactSearch={app.setArtifactSearch}
               onSetArtifactSort={app.setArtifactSort}
               onGoToChat={() => app.setRoute("chat")}
-              onOpenArtifact={(artifact) => void app.handleOpenArtifact(artifact)}
+              onOpenArtifact={(artifact) =>
+                void app.handleOpenArtifact(artifact)
+              }
               onTogglePin={(artifactId) =>
                 app.setPinnedArtifacts((current) =>
-                  current.includes(artifactId) ? current.filter((item) => item !== artifactId) : [artifactId, ...current],
+                  current.includes(artifactId)
+                    ? current.filter((item) => item !== artifactId)
+                    : [artifactId, ...current],
                 )
               }
               onRenameArtifact={app.renameArtifact}
@@ -166,6 +239,18 @@ export default function App() {
             />
           )}
 
+          {app.route === "study" && (
+            <StudyPlannerRoute activeWorkspaceId={app.activeWorkspaceId} />
+          )}
+
+          {app.route === "study_progress" && (
+            <StudyProgressRoute activeWorkspaceId={app.activeWorkspaceId} />
+          )}
+
+          {app.route === "flashcards" && (
+            <FlashcardsRoute activeWorkspaceId={app.activeWorkspaceId} />
+          )}
+
           {app.route === "quiz" && (
             <QuizRoute
               activeWorkspaceId={app.activeWorkspaceId}
@@ -175,7 +260,9 @@ export default function App() {
               reviewItems={app.reviewItems}
               conceptSummary={app.conceptSummary}
               onStartQuiz={(restart) => void app.handleStartQuiz(restart)}
-              onToggleIncorrectOnly={() => app.setIncorrectReviewOnly((current) => !current)}
+              onToggleIncorrectOnly={() =>
+                app.setIncorrectReviewOnly((current) => !current)
+              }
               onRetryIncorrect={() => app.setIncorrectReviewOnly(true)}
               onAnswerQuiz={(choice) => void app.handleAnswerQuiz(choice)}
               onJumpToSource={(anchor) => void app.handleJumpToSource(anchor)}
@@ -190,10 +277,15 @@ export default function App() {
               sourceSearchResults={app.sourceSearchResults}
               sourcePanelExpanded={app.sourcePanelExpanded}
               quizSourceAnchor={app.quizState.sourceAnchor}
-              onOpenQuizCitation={() => app.quizState.sourceAnchor && void app.handleJumpToSource(app.quizState.sourceAnchor)}
+              onOpenQuizCitation={() =>
+                app.quizState.sourceAnchor &&
+                void app.handleJumpToSource(app.quizState.sourceAnchor)
+              }
               onSourceNav={app.handleSourceNav}
               onCopySourceRef={() => void app.copySourceRef()}
-              onToggleExpanded={() => app.setSourcePanelExpanded((current) => !current)}
+              onToggleExpanded={() =>
+                app.setSourcePanelExpanded((current) => !current)
+              }
               onSetSourceSearch={app.setSourceSearch}
             />
           )}

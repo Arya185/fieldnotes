@@ -12,7 +12,13 @@ from pydantic import BaseModel, ConfigDict
 from backend.agent.planner import ExecutionPlan, PlanStep
 from backend.config import FIELDNOTES_VERSION, OPENAI_MODEL
 from backend.indexer.bm25 import RetrievalChunk, RetrievalProvider, tokenize
-from backend.models import ConceptUpdate, QuizQuestionSchema, RouteIntentSchema
+from backend.models import (
+    ConceptUpdate,
+    FlashcardBatchSchema,
+    FlashcardGenerationItem,
+    QuizQuestionSchema,
+    RouteIntentSchema,
+)
 
 
 class AnalysisScriptSchema(BaseModel):
@@ -165,6 +171,44 @@ class FakeLLMClient:
                 state="touched",
             )
         ]
+
+    def generate_flashcards(
+        self,
+        *,
+        retrieval_results: list[RetrievalChunk],
+        count: int,
+        card_types: list[str],
+        topic_hint: str | None = None,
+    ) -> FlashcardBatchSchema:
+        types_cycle = card_types or [
+            "definition",
+            "concept",
+            "application",
+            "true_false",
+            "fill_blank",
+            "scenario",
+        ]
+        difficulty_cycle = ["easy", "medium", "hard"]
+        bloom_cycle = ["remember", "understand", "apply", "analyze", "evaluate", "create"]
+        items: list[FlashcardGenerationItem] = []
+        for index in range(max(1, count)):
+            result = retrieval_results[index % len(retrieval_results)]
+            card_type = types_cycle[index % len(types_cycle)]
+            snippet = re.sub(r"\s+", " ", result.chunk).strip()[:160] or "See source passage."
+            label = topic_hint or result.relative_path
+            items.append(
+                FlashcardGenerationItem(
+                    question=f"[{card_type}] What does {label} say about this passage?",
+                    answer=snippet,
+                    card_type=card_type,
+                    difficulty=difficulty_cycle[index % len(difficulty_cycle)],
+                    bloom_level=bloom_cycle[index % len(bloom_cycle)],
+                    source_anchor=f"{result.file_id}#{result.anchor}",
+                )
+            )
+            if len(items) >= count:
+                break
+        return FlashcardBatchSchema(flashcards=items)
 
     def _build_deterministic_answer(
         self,

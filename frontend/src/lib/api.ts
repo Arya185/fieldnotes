@@ -2,6 +2,10 @@ import type {
   ArtifactCard,
   AskEvent,
   AskRequest,
+  FlashcardListResponse,
+  FlashcardReviewRequest,
+  FlashcardReviewResponse,
+  GenerateFlashcardsRequest,
   HealthResponse,
   IndexAcceptedResponse,
   IndexEvent,
@@ -35,7 +39,11 @@ export class ApiError extends Error {
 }
 
 export function isWorkspaceNotFoundError(error: unknown): error is ApiError {
-  return error instanceof ApiError && error.status === 404 && error.code === "WORKSPACE_NOT_FOUND";
+  return (
+    error instanceof ApiError &&
+    error.status === 404 &&
+    error.code === "WORKSPACE_NOT_FOUND"
+  );
 }
 
 async function buildApiError(response: Response): Promise<ApiError> {
@@ -63,9 +71,13 @@ async function buildApiError(response: Response): Promise<ApiError> {
   );
 }
 
-async function requestJson<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
+async function requestJson<T>(
+  input: RequestInfo,
+  init?: RequestInit,
+): Promise<T> {
   const response = await fetch(input, {
     ...init,
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       ...(init?.headers ?? {}),
@@ -77,7 +89,9 @@ async function requestJson<T>(input: RequestInfo, init?: RequestInit): Promise<T
   return (await response.json()) as T;
 }
 
-export async function postIndex(payload: IndexRequest): Promise<IndexAcceptedResponse> {
+export async function postIndex(
+  payload: IndexRequest,
+): Promise<IndexAcceptedResponse> {
   return requestJson<IndexAcceptedResponse>(`${API_BASE}/index`, {
     method: "POST",
     body: JSON.stringify(payload),
@@ -88,7 +102,9 @@ export async function getHealth(): Promise<HealthResponse> {
   return requestJson<HealthResponse>(`${API_BASE}/health`);
 }
 
-export async function getNotebook(workspaceId: string): Promise<NotebookResponse> {
+export async function getNotebook(
+  workspaceId: string,
+): Promise<NotebookResponse> {
   return requestJson<NotebookResponse>(
     `${API_BASE}/notebook?workspace_id=${encodeURIComponent(workspaceId)}`,
   );
@@ -110,6 +126,7 @@ export async function fetchArtifact(
 ): Promise<Response> {
   const response = await fetch(
     `${API_BASE}/artifact/${encodeURIComponent(artifactId)}?workspace_id=${encodeURIComponent(workspaceId)}`,
+    { credentials: "include" },
   );
   if (!response.ok) {
     throw await buildApiError(response);
@@ -150,7 +167,11 @@ export async function openIndexEvents(
   if (!response.ok || !response.body) {
     throw await buildApiError(response);
   }
-  await readSse(response.body, (payload) => onEvent(payload as IndexEvent), signal);
+  await readSse(
+    response.body,
+    (payload) => onEvent(payload as IndexEvent),
+    signal,
+  );
 }
 
 async function consumeSse<TEvent>(
@@ -161,6 +182,7 @@ async function consumeSse<TEvent>(
 ): Promise<void> {
   const response = await fetch(endpoint, {
     method: "POST",
+    credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
     signal,
@@ -169,6 +191,81 @@ async function consumeSse<TEvent>(
     throw await buildApiError(response);
   }
   await readSse(response.body, (chunk) => onEvent(chunk as TEvent), signal);
+}
+
+export async function getAuthStatus(): Promise<AuthStatusResponse> {
+  return requestJson<AuthStatusResponse>(`${API_BASE}/auth/status`);
+}
+
+export async function loginWithProvider(
+  provider: "google" | "github",
+): Promise<{ redirect_url: string }> {
+  return requestJson<{ redirect_url: string }>(
+    `${API_BASE}/auth/login/${provider}`,
+  );
+}
+
+export async function logout(): Promise<{ status: string }> {
+  return requestJson<{ status: string }>(`${API_BASE}/auth/logout`, {
+    method: "POST",
+  });
+}
+
+export async function getStudyPlans(): Promise<unknown> {
+  return requestJson<unknown>(`${API_BASE}/study-plans`);
+}
+
+export async function createStudyPlan(payload: { workspace_id: string; title: string; exam_date: string; hours_per_day?: number; pace?: string; }) {
+  return requestJson<{ plan_id: string }>(`${API_BASE}/study-plans`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getStudyProgress(workspace_id: string) {
+  return requestJson<unknown>(`${API_BASE}/study-progress?workspace_id=${encodeURIComponent(workspace_id)}`);
+}
+
+export async function completePlanItem(workspace_id: string, plan_id: string, item_id: string, score?: number) {
+  const qs = new URLSearchParams();
+  qs.set("workspace_id", workspace_id);
+  if (typeof score === "number") qs.set("score", String(score));
+  return requestJson<unknown>(`${API_BASE}/study-plans/${encodeURIComponent(plan_id)}/items/${encodeURIComponent(item_id)}/complete?${qs.toString()}`, {
+    method: "PATCH",
+  });
+}
+
+export async function generateFlashcards(
+  payload: GenerateFlashcardsRequest,
+): Promise<FlashcardListResponse> {
+  return requestJson<FlashcardListResponse>(`${API_BASE}/flashcards/generate`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getFlashcards(
+  workspace_id: string,
+  options?: { topic_id?: string | null; due_only?: boolean },
+): Promise<FlashcardListResponse> {
+  const qs = new URLSearchParams();
+  qs.set("workspace_id", workspace_id);
+  if (options?.topic_id) {
+    qs.set("topic_id", options.topic_id);
+  }
+  if (options?.due_only) {
+    qs.set("due_only", "true");
+  }
+  return requestJson<FlashcardListResponse>(`${API_BASE}/flashcards?${qs.toString()}`);
+}
+
+export async function reviewFlashcard(
+  payload: FlashcardReviewRequest,
+): Promise<FlashcardReviewResponse> {
+  return requestJson<FlashcardReviewResponse>(`${API_BASE}/flashcards/review`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function readSse(
@@ -200,6 +297,25 @@ export async function readSse(
       boundary = buffer.indexOf("\n\n");
     }
   }
+}
+
+export interface AuthUser {
+  user_id: string;
+  email: string;
+  name: string;
+  provider: string;
+  provider_id: string;
+  role: string;
+}
+
+export interface AuthStatusResponse {
+  auth_enabled: boolean;
+  authenticated: boolean;
+  user?: AuthUser;
+  providers: {
+    google: boolean;
+    github: boolean;
+  };
 }
 
 export interface ArtifactPayload {

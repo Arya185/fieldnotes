@@ -21,7 +21,13 @@ from backend.config import (
 )
 from backend.indexer.bm25 import RetrievalChunk, RetrievalProvider
 from backend.indexer.reranker import DeterministicReranker
-from backend.models import ArtifactEvent, ConceptUpdate, QuizQuestionSchema, RouteIntentSchema
+from backend.models import (
+    ArtifactEvent,
+    ConceptUpdate,
+    FlashcardBatchSchema,
+    QuizQuestionSchema,
+    RouteIntentSchema,
+)
 from backend.release import FakeLLMClient as FakeLLMClient
 from backend.telemetry.tracing import metrics_registry, trace_collector
 
@@ -586,6 +592,48 @@ class LLMClient:
             ],
         )
         return QuizQuestionSchema.model_validate_json(self._response_output_text(response))
+
+    def generate_flashcards(
+        self,
+        *,
+        retrieval_results: list[RetrievalChunk],
+        count: int,
+        card_types: list[str],
+        topic_hint: str | None = None,
+    ) -> FlashcardBatchSchema:
+        """Generate a grounded batch of spaced-repetition flashcards from retrieved chunks."""
+
+        context = "\n\n".join(
+            [
+                f"[{index}] path={result.relative_path} anchor={result.file_id}#{result.anchor}\n{result.chunk}"
+                for index, result in enumerate(retrieval_results, start=1)
+            ]
+        )
+        topic_clause = f" Focus on this topic: {topic_hint}." if topic_hint else ""
+        response = self._create_structured_completion(
+            response_name="flashcard_batch",
+            schema=FlashcardBatchSchema.model_json_schema(),
+            input_items=[
+                {
+                    "role": "developer",
+                    "content": (
+                        f"Generate up to {count} spaced-repetition flashcards grounded only in the "
+                        "retrieved passages. Use a mix of these card types: "
+                        f"{', '.join(card_types)}. Each flashcard needs a concise question, a correct "
+                        "grounded answer, a difficulty (easy|medium|hard), a bloom_level "
+                        "(remember|understand|apply|analyze|evaluate|create), and source_anchor set to "
+                        "one of the provided full anchors. Do not invent facts outside the passages."
+                        f"{topic_clause}"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": f"Retrieved passages:\n{context}",
+                },
+            ],
+            max_output_tokens=2500,
+        )
+        return FlashcardBatchSchema.model_validate_json(self._response_output_text(response))
 
     def extract_concepts(
         self,

@@ -33,6 +33,7 @@ from backend.storage import (
 
 from .retrieval import load_fallback_retrieval
 from .starters import build_refreshed_starters
+from backend.services.planner import adjust_plan_on_quiz_result
 
 
 def load_quiz_concept_names(connection: sqlite3.Connection) -> list[str]:
@@ -222,6 +223,13 @@ async def stream_quiz_answer_events(
                 refreshed_starters=refreshed_starters,
             ).model_dump()
         )
+        # Adaptive study plan adjustments
+        try:
+            concept_topic_id = str(updated_attempt["concept_id"]) if updated_attempt.get("concept_id") else None
+            adjust_plan_on_quiz_result(workspace_record.db_path, concept_topic_id, is_correct, 1.0 if is_correct else 0.0)
+        except Exception:
+            # Do not fail quiz flow due to planner errors
+            pass
     except Exception as exc:
         yield sse(
             sse_error_payload(

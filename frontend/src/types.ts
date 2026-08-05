@@ -263,6 +263,64 @@ export interface SourceResponse {
   file_path: string;
 }
 
+export type FlashcardType =
+  | "definition"
+  | "concept"
+  | "application"
+  | "true_false"
+  | "fill_blank"
+  | "scenario";
+export type FlashcardDifficulty = "easy" | "medium" | "hard";
+export type BloomLevel =
+  | "remember"
+  | "understand"
+  | "apply"
+  | "analyze"
+  | "evaluate"
+  | "create";
+export type ConfidenceRating = "again" | "hard" | "good" | "easy";
+
+export interface Flashcard {
+  id: string;
+  topic_id: string | null;
+  card_type: FlashcardType;
+  question: string;
+  answer: string;
+  difficulty: FlashcardDifficulty;
+  bloom_level: BloomLevel;
+  source_document: string;
+  source_locator: string;
+  review_interval: number;
+  ease_factor: number;
+  next_review: string;
+  last_review: string | null;
+  review_count: number;
+  mastery_weight: number;
+}
+
+export interface FlashcardListResponse {
+  flashcards: Flashcard[];
+}
+
+export interface GenerateFlashcardsRequest {
+  workspace_id: string;
+  topic_id?: string | null;
+  count?: number;
+  card_types?: FlashcardType[] | null;
+}
+
+export interface FlashcardReviewRequest {
+  workspace_id: string;
+  flashcard_id: string;
+  confidence: ConfidenceRating;
+}
+
+export interface FlashcardReviewResponse {
+  flashcard: Flashcard;
+  topic_mastery: number | null;
+  generated_more: boolean;
+}
+
 export interface RetrievalInspectionRecord {
   file_id: string;
   relative_path: string;

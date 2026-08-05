@@ -1,10 +1,17 @@
 import type { RefObject } from "react";
 import { useEffect, useRef, useState } from "react";
 
-import { fetchArtifact } from "./api";
+import { fetchArtifact, getAuthStatus, loginWithProvider, logout } from "./api";
 import { useAskState } from "./appState/askState";
+import type { AuthStatusResponse } from "./api";
 import type { ContextTab, RouteKey } from "./appState/types";
-import { getInitialRoute, routes, formatDateTime, formatRelative, copyText } from "./appState/utils";
+import {
+  getInitialRoute,
+  routes,
+  formatDateTime,
+  formatRelative,
+  copyText,
+} from "./appState/utils";
 import { useQuizState } from "./appState/quizState";
 import { useWorkspaceState } from "./appState/workspaceState";
 
@@ -12,6 +19,9 @@ const DEFAULT_STATUS_BY_ROUTE: Record<RouteKey, string> = {
   workspace: "Ready.",
   chat: "Ready.",
   notebook: "Notebook ready.",
+  study: "Study planner ready.",
+  study_progress: "Study progress ready.",
+  flashcards: "Flashcards ready.",
   quiz: "Ready to quiz.",
   source: "Source viewer ready.",
   developer: "Diagnostics ready.",
@@ -31,7 +41,9 @@ export type {
 } from "./appState/types";
 export { formatDateTime, formatRelative } from "./appState/utils";
 
-export function useFieldnotesApp(composerRef: RefObject<HTMLTextAreaElement | null>) {
+export function useFieldnotesApp(
+  composerRef: RefObject<HTMLTextAreaElement | null>,
+) {
   const [route, setRoute] = useState<RouteKey>(getInitialRoute);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [contextPanelOpen, setContextPanelOpen] = useState(false);
@@ -39,6 +51,9 @@ export function useFieldnotesApp(composerRef: RefObject<HTMLTextAreaElement | nu
   const [busy, setBusy] = useState(false);
   const [statusMessage, setStatusMessage] = useState("Ready.");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [authStatus, setAuthStatus] = useState<AuthStatusResponse | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
   const recoveryRef = useRef<{
     resetAsk: () => void;
     resetQuiz: () => void;
@@ -120,7 +135,11 @@ export function useFieldnotesApp(composerRef: RefObject<HTMLTextAreaElement | nu
         event.preventDefault();
         ask.handleCancelResponse();
       }
-      if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "r") {
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        event.shiftKey &&
+        event.key.toLowerCase() === "r"
+      ) {
         event.preventDefault();
         void ask.handleRetryLast();
       }
@@ -129,7 +148,26 @@ export function useFieldnotesApp(composerRef: RefObject<HTMLTextAreaElement | nu
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [ask, composerRef]);
 
-  const visibleRoutes = routes.filter((item) => workspace.developerMode || item !== "developer");
+  useEffect(() => {
+    async function refreshAuth() {
+      setAuthLoading(true);
+      try {
+        const status = await getAuthStatus();
+        setAuthStatus(status);
+        setAuthError(null);
+      } catch (error) {
+        setAuthStatus(null);
+        setAuthError((error as Error).message);
+      } finally {
+        setAuthLoading(false);
+      }
+    }
+    void refreshAuth();
+  }, []);
+
+  const visibleRoutes = routes.filter(
+    (item) => workspace.developerMode || item !== "developer",
+  );
 
   const currentTitle =
     route === "chat"
@@ -138,7 +176,9 @@ export function useFieldnotesApp(composerRef: RefObject<HTMLTextAreaElement | nu
         ? "Notebook"
         : route === "quiz"
           ? "Study mode"
-          : route === "source"
+          : route === "flashcards"
+            ? "Flashcards"
+            : route === "source"
             ? "Source viewer"
             : route === "developer"
               ? "Developer diagnostics"
@@ -169,7 +209,10 @@ export function useFieldnotesApp(composerRef: RefObject<HTMLTextAreaElement | nu
       return;
     }
     try {
-      const response = await fetchArtifact(workspace.activeWorkspaceId, card.id);
+      const response = await fetchArtifact(
+        workspace.activeWorkspaceId,
+        card.id,
+      );
       const text = await response.text();
       await copyText(text);
       setStatusMessage("Artifact markdown copied.");
@@ -182,7 +225,9 @@ export function useFieldnotesApp(composerRef: RefObject<HTMLTextAreaElement | nu
     if (!workspace.sourceView.response) {
       return;
     }
-    await copyText(`${workspace.sourceView.response.file_path} -> ${workspace.sourceView.response.label} -> ${workspace.sourceView.locator ?? ""}`);
+    await copyText(
+      `${workspace.sourceView.response.file_path} -> ${workspace.sourceView.response.label} -> ${workspace.sourceView.locator ?? ""}`,
+    );
     setStatusMessage("Source reference copied.");
   }
 
@@ -298,5 +343,26 @@ export function useFieldnotesApp(composerRef: RefObject<HTMLTextAreaElement | nu
     onChatScroll: ask.onChatScroll,
     formatDateTime,
     formatRelative,
+    authStatus,
+    authLoading,
+    authError,
+    loginWithProvider: async (provider: "google" | "github") => {
+      try {
+        const payload = await loginWithProvider(provider);
+        window.location.assign(payload.redirect_url);
+      } catch (error) {
+        setErrorMessage(`Login failed: ${(error as Error).message}`);
+      }
+    },
+    logout: async () => {
+      try {
+        await logout();
+        const status = await getAuthStatus();
+        setAuthStatus(status);
+        setStatusMessage("Logged out.");
+      } catch (error) {
+        setErrorMessage(`Logout failed: ${(error as Error).message}`);
+      }
+    },
   };
 }

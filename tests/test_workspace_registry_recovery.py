@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from backend.indexer.workspace_manager import WorkspaceManager
 
@@ -15,83 +15,56 @@ class WorkspaceRegistryRecoveryTests(unittest.TestCase):
         self.base = Path(self.temp_dir.name)
         self.registry_dir = self.base / ".fieldnotes_registry"
         self.registry_dir.mkdir()
-        self.registry_path = self.registry_dir / "workspaces.json"
+        self.registry_path = self.registry_dir / "fieldnotes_registry.db"
+        self.legacy_registry_path = self.registry_dir / "workspaces.json"
         self.manager = WorkspaceManager(self.registry_path)
 
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
 
-    def test_missing_registry_returns_empty(self) -> None:
-        self.assertEqual(self.manager._load_registry(), {})
+    def test_missing_registry_returns_empty_list(self) -> None:
+        self.assertEqual(self.manager.list_workspaces(), [])
         self.assertIsNone(self.manager.last_recovery_warning())
 
-    def test_empty_registry_recovers_and_quarantines(self) -> None:
-        self.registry_path.write_text("", encoding="utf-8")
-        with self.assertLogs("fieldnotes.registry", level="WARNING"):
-            registry = self.manager._load_registry()
-        self.assertEqual(registry, {})
-        self.assertEqual(self.registry_path.read_text(encoding="utf-8"), "{}")
-        self.assertTrue(any(path.name.startswith("workspaces.corrupt-") for path in self.registry_dir.iterdir()))
-        self.assertEqual(self.manager.last_recovery_warning(), "Registry file was empty and was recreated.")
-
-    def test_malformed_registry_recovers_and_quarantines(self) -> None:
-        self.registry_path.write_text("{bad json", encoding="utf-8")
-        with self.assertLogs("fieldnotes.registry", level="WARNING"):
-            registry = self.manager._load_registry()
-        self.assertEqual(registry, {})
-        self.assertEqual(json.loads(self.registry_path.read_text(encoding="utf-8")), {})
-        self.assertTrue(any(path.name.startswith("workspaces.corrupt-") for path in self.registry_dir.iterdir()))
-
-    def test_truncated_registry_recovers_and_quarantines(self) -> None:
-        self.registry_path.write_text('{"ws":"', encoding="utf-8")
-        with self.assertLogs("fieldnotes.registry", level="WARNING"):
-            registry = self.manager._load_registry()
-        self.assertEqual(registry, {})
-        self.assertTrue(any(path.name.startswith("workspaces.corrupt-") for path in self.registry_dir.iterdir()))
-
-    def test_permission_failure_on_load_recovers(self) -> None:
-        self.registry_path.write_text("{}", encoding="utf-8")
-        with (
-            patch.object(Path, "read_text", side_effect=PermissionError("denied")),
-            self.assertLogs("fieldnotes.registry", level="WARNING"),
-        ):
-            registry = self.manager._load_registry()
-        self.assertEqual(registry, {})
-        self.assertEqual(self.manager.last_recovery_warning(), "Registry file could not be read and was recreated.")
-
-    def test_interrupted_write_does_not_break_register(self) -> None:
+    def test_register_creates_workspace_and_metadata(self) -> None:
         workspace = self.base / "workspace"
-        with patch.object(self.manager, "_atomic_write_json", side_effect=OSError("interrupted write")):
-            record = self.manager.register(workspace)
+        record = self.manager.register(workspace)
         self.assertEqual(record.root, workspace.resolve())
-        self.assertEqual(self.manager.last_recovery_warning(), "Workspace registry could not be updated on disk.")
-        self.assertIn(record.workspace_id, self.manager._cache)
+        self.assertTrue((workspace / ".fieldnotes" / "workspace.json").exists())
+        self.assertEqual(self.manager.get(record.workspace_id).workspace_id, record.workspace_id)
 
-    def test_backup_created_before_overwrite(self) -> None:
-        workspace_a = self.base / "workspace_a"
-        workspace_b = self.base / "workspace_b"
-        first = self.manager.register(workspace_a)
-        second = self.manager.register(workspace_b)
-        backup = self.manager.backup_path
-        self.assertTrue(backup.exists())
-        backup_payload = json.loads(backup.read_text(encoding="utf-8"))
-        self.assertIn(first.workspace_id, backup_payload)
-        self.assertNotIn(second.workspace_id, backup_payload)
-
-    def test_registry_recreated_after_corruption_and_register_continues(self) -> None:
-        self.registry_path.write_text("{", encoding="utf-8")
+    def test_register_same_workspace_returns_same_id(self) -> None:
         workspace = self.base / "workspace"
-        with self.assertLogs("fieldnotes.registry", level="WARNING"):
-            record = self.manager.register(workspace)
-        payload = json.loads(self.registry_path.read_text(encoding="utf-8"))
-        self.assertEqual(payload, {record.workspace_id: str(workspace.resolve())})
+        first = self.manager.register(workspace)
+        second = self.manager.register(workspace)
+        self.assertEqual(first.workspace_id, second.workspace_id)
 
-    def test_invalid_registry_shape_recovers(self) -> None:
-        self.registry_path.write_text('["wrong"]', encoding="utf-8")
-        with self.assertLogs("fieldnotes.registry", level="WARNING"):
-            registry = self.manager._load_registry()
-        self.assertEqual(registry, {})
-        self.assertEqual(self.manager.last_recovery_warning(), "Registry file contents were invalid and were recreated.")
+    def test_legacy_registry_json_migrates_to_db(self) -> None:
+        workspace = self.base / "workspace"
+        workspace.resolve()
+        legacy_payload = {"abc123": str(workspace.resolve())}
+        self.legacy_registry_path.write_text(json.dumps(legacy_payload), encoding="utf-8")
+
+        migrated_manager = WorkspaceManager(self.registry_path)
+        self.assertFalse(self.legacy_registry_path.exists())
+        record = migrated_manager.get("abc123")
+        self.assertIsNotNone(record)
+        self.assertEqual(record.root, workspace.resolve())
+
+    def test_corrupted_registry_db_is_recovered(self) -> None:
+        self.registry_path.write_bytes(b"not a sqlite file")
+        recovered_manager = WorkspaceManager(self.registry_path)
+        self.assertEqual(recovered_manager.list_workspaces(), [])
+        self.assertTrue(self.registry_path.exists())
+        self.assertEqual(
+            recovered_manager.last_recovery_warning(),
+            "Registry database could not be read and was recreated.",
+        )
+
+    def test_registry_path_aliasing_from_legacy_json_name(self) -> None:
+        json_named_path = self.registry_dir / "workspaces.json"
+        manager = WorkspaceManager(json_named_path)
+        self.assertEqual(manager.registry_path, self.registry_dir / "fieldnotes_registry.db")
 
 
 if __name__ == "__main__":

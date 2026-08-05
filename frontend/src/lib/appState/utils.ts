@@ -1,6 +1,6 @@
 import type { RouteKey } from "./types";
 
-export const routes: RouteKey[] = ["workspace", "chat", "notebook", "quiz", "source", "developer"];
+export const routes: RouteKey[] = ["workspace", "chat", "notebook", "study", "study_progress", "flashcards", "quiz", "source", "developer"];
 
 export function getInitialRoute(): RouteKey {
   const hash = window.location.hash.replace("#", "") as RouteKey;

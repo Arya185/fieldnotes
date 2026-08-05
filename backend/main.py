@@ -12,7 +12,7 @@ from urllib.parse import urlsplit
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 
 from backend.agent.llm import LLMClient
 from backend.config import (
@@ -26,6 +26,13 @@ from backend.db import connect_sqlite, latest_storage_warning_message
 from backend.errors import error_response, request_id_for
 from backend.indexer.events import RunManager, run_manager
 from backend.indexer.pipeline import run_indexing
+from backend.auth.dependencies import get_current_user
+from backend.auth.models import AuthenticatedUser
+from backend.auth.router import router as auth_router
+from backend.routers.study_plans import router as study_router
+from backend.routers.study_progress import router as study_progress_router
+from backend.routers.flashcards import router as flashcards_router
+from backend.auth.security import assert_workspace_access, require_workspace_role
 from backend.indexer.workspace_manager import WorkspaceManager, WorkspaceRecord, workspace_manager
 from backend.models import (
     AskRequest,
@@ -70,10 +77,14 @@ app = FastAPI(title="Fieldnotes API", version=FIELDNOTES_VERSION, lifespan=lifes
 app.add_middleware(
     CORSMiddleware,
     allow_origins=sorted(TRUSTED_ORIGINS),
-    allow_credentials=False,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(auth_router)
+app.include_router(study_router)
+app.include_router(study_progress_router)
+app.include_router(flashcards_router)
 llm_client: LLMClient | object | None = None
 
 
@@ -200,9 +211,14 @@ async def get_index_events(
 
 
 @app.post("/ask")
-async def post_ask(request: AskRequest, http_request: Request) -> StreamingResponse:
+async def post_ask(
+    request: AskRequest,
+    http_request: Request,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> StreamingResponse:
     """Stream grounded assistant output for a user question."""
     _reject_browser_origin(http_request)
+    assert_workspace_access(request.workspace_id, current_user, workspace_manager._repository, ["owner", "teacher", "student", "viewer"])
     return StreamingResponse(
         stream_ask_events(request, http_request, _get_llm_client, _sse),
         media_type="text/event-stream",
@@ -210,9 +226,14 @@ async def post_ask(request: AskRequest, http_request: Request) -> StreamingRespo
 
 
 @app.post("/quiz/start")
-async def post_quiz_start(request: QuizRequest, http_request: Request) -> StreamingResponse:
+async def post_quiz_start(
+    request: QuizRequest,
+    http_request: Request,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> StreamingResponse:
     """Start one grounded quiz question for the selected workspace."""
     _reject_browser_origin(http_request)
+    assert_workspace_access(request.workspace_id, current_user, workspace_manager._repository, ["owner", "teacher", "student", "viewer"])
     return StreamingResponse(
         stream_quiz_start_events(request, http_request, _get_llm_client, _sse),
         media_type="text/event-stream",
@@ -220,9 +241,14 @@ async def post_quiz_start(request: QuizRequest, http_request: Request) -> Stream
 
 
 @app.post("/quiz/answer")
-async def post_quiz_answer(request: QuizAnswerRequest, http_request: Request) -> StreamingResponse:
+async def post_quiz_answer(
+    request: QuizAnswerRequest,
+    http_request: Request,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> StreamingResponse:
     """Grade one persisted quiz attempt and update concept state."""
     _reject_browser_origin(http_request)
+    assert_workspace_access(request.workspace_id, current_user, workspace_manager._repository, ["owner", "teacher", "student", "viewer"])
     return StreamingResponse(
         stream_quiz_answer_events(request, http_request, _sse),
         media_type="text/event-stream",
@@ -232,10 +258,12 @@ async def post_quiz_answer(request: QuizAnswerRequest, http_request: Request) ->
 def get_workspace_record(
     workspace_id: str,
     manager: WorkspaceManager = Depends(get_workspace_manager),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> WorkspaceRecord:
     workspace_record = manager.get(workspace_id)
     if workspace_record is None:
         raise HTTPException(status_code=404, detail="Unknown workspace_id")
+    assert_workspace_access(workspace_id, current_user, manager._repository, ["owner", "teacher", "student", "viewer"])
     return workspace_record
 
 

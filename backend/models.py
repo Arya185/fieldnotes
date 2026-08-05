@@ -23,6 +23,14 @@ ArtifactKind = Literal["chart", "script", "explainer"]
 StarterSeed = Literal["anomaly", "concept", "practice"]
 ColumnDType = Literal["int", "float", "string", "bool", "datetime"]
 ArtifactCardKind = Literal["chart", "explainer", "quiz_result", "script"]
+FlashcardType = Literal[
+    "definition", "concept", "application", "true_false", "fill_blank", "scenario"
+]
+FlashcardDifficulty = Literal["easy", "medium", "hard"]
+BloomLevel = Literal[
+    "remember", "understand", "apply", "analyze", "evaluate", "create"
+]
+ConfidenceRating = Literal["again", "hard", "good", "easy"]
 
 
 class StarterCard(StrictModel):
@@ -273,3 +281,57 @@ class SourceResponse(StrictModel):
     text: str
     label: str
     file_path: str
+
+
+class Flashcard(StrictModel):
+    id: str
+    topic_id: str | None
+    card_type: FlashcardType
+    question: str
+    answer: str
+    difficulty: FlashcardDifficulty
+    bloom_level: BloomLevel
+    source_document: str
+    source_locator: str
+    review_interval: float
+    ease_factor: float
+    next_review: str
+    last_review: str | None
+    review_count: int
+    mastery_weight: float
+
+
+class FlashcardGenerationItem(StrictModel):
+    question: str
+    answer: str
+    card_type: FlashcardType
+    difficulty: FlashcardDifficulty
+    bloom_level: BloomLevel
+    source_anchor: str
+
+
+class FlashcardBatchSchema(StrictModel):
+    flashcards: list[FlashcardGenerationItem] = Field(min_length=1, max_length=20)
+
+
+class GenerateFlashcardsRequest(StrictModel):
+    workspace_id: str
+    topic_id: str | None = None
+    count: int = Field(default=10, ge=1, le=20)
+    card_types: list[FlashcardType] | None = None
+
+
+class FlashcardListResponse(StrictModel):
+    flashcards: list[Flashcard]
+
+
+class FlashcardReviewRequest(StrictModel):
+    workspace_id: str
+    flashcard_id: str
+    confidence: ConfidenceRating
+
+
+class FlashcardReviewResponse(StrictModel):
+    flashcard: Flashcard
+    topic_mastery: float | None
+    generated_more: bool
