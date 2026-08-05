@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from backend.auth.dependencies import get_current_user
 from backend.auth.models import AuthenticatedUser
-from backend.auth.security import assert_workspace_access
+from backend.auth.security import assert_workspace_access, enforce_rate_limit
 from backend.indexer.workspace_manager import workspace_manager
 from backend.models import (
     FlashcardListResponse,
@@ -26,6 +26,7 @@ WORKSPACE_ROLES = ["owner", "teacher", "student", "viewer"]
 @router.post("/flashcards/generate")
 def post_generate_flashcards(
     payload: GenerateFlashcardsRequest,
+    request: Request,
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> FlashcardListResponse:
     """Generate a grounded batch of flashcards for one workspace or topic."""
@@ -35,6 +36,13 @@ def post_generate_flashcards(
         raise HTTPException(status_code=404, detail="Unknown workspace_id")
     assert_workspace_access(
         payload.workspace_id, current_user, workspace_manager._repository, WORKSPACE_ROLES
+    )
+    enforce_rate_limit(
+        request,
+        scope="flashcards_llm",
+        current_user=current_user,
+        capacity=8,
+        refill_period_seconds=60,
     )
 
     try:

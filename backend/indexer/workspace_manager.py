@@ -91,6 +91,7 @@ class WorkspaceManager:
         self._repository.remove_member(workspace_id, user_id)
 
     def register(self, workspace_root: Path, creator: AuthenticatedUser | None = None) -> WorkspaceRecord:
+        auth_config.refresh()
         workspace_root = workspace_root.expanduser().resolve()
         paths = initialize_workspace(workspace_root)
         metadata_path = paths.fieldnotes_dir / "workspace.json"
@@ -162,6 +163,7 @@ class WorkspaceManager:
         return self._database.last_recovery_warning
 
     def _ensure_registry(self) -> None:
+        auth_config.refresh()
         self.registry_dir.mkdir(parents=True, exist_ok=True)
         if self.legacy_registry_path.exists():
             self._migrate_legacy_json_registry()

@@ -7,16 +7,17 @@ export function StudyPlannerRoute(props: { activeWorkspaceId?: string | null }) 
 
   useEffect(() => {
     async function load() {
+      if (!props.activeWorkspaceId) return;
       setLoading(true);
       try {
-        const data = await getStudyPlans();
+        const data = await getStudyPlans(props.activeWorkspaceId);
         setPlans(Array.isArray(data) ? data : []);
       } finally {
         setLoading(false);
       }
     }
     void load();
-  }, []);
+  }, [props.activeWorkspaceId]);
 
   async function handleCreate() {
     if (!props.activeWorkspaceId) return;

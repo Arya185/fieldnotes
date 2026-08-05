@@ -29,12 +29,16 @@ from backend.indexer.pipeline import run_indexing
 from backend.auth.dependencies import get_current_user
 from backend.auth.models import AuthenticatedUser
 from backend.auth.router import router as auth_router
+from backend.auth.security import (
+    assert_workspace_access,
+    enforce_rate_limit,
+    validate_csrf,
+)
 from backend.routers.study_plans import router as study_router
 from backend.routers.study_progress import router as study_progress_router
 from backend.routers.flashcards import router as flashcards_router
 from backend.routers.concept_map import router as concept_map_router
 from backend.routers.integrations import router as integrations_router
-from backend.auth.security import assert_workspace_access, require_workspace_role
 from backend.indexer.workspace_manager import WorkspaceManager, WorkspaceRecord, workspace_manager
 from backend.models import (
     AskRequest,
@@ -90,6 +94,12 @@ app.include_router(flashcards_router)
 app.include_router(concept_map_router)
 app.include_router(integrations_router)
 llm_client: LLMClient | object | None = None
+
+
+@app.middleware("http")
+async def csrf_protection_middleware(request: Request, call_next):
+    validate_csrf(request)
+    return await call_next(request)
 
 
 def get_workspace_manager() -> WorkspaceManager:
@@ -222,6 +232,13 @@ async def post_ask(
 ) -> StreamingResponse:
     """Stream grounded assistant output for a user question."""
     _reject_browser_origin(http_request)
+    enforce_rate_limit(
+        http_request,
+        scope="ask_llm",
+        current_user=current_user,
+        capacity=10,
+        refill_period_seconds=60,
+    )
     assert_workspace_access(request.workspace_id, current_user, workspace_manager._repository, ["owner", "teacher", "student", "viewer"])
     return StreamingResponse(
         stream_ask_events(request, http_request, _get_llm_client, _sse),
@@ -237,6 +254,13 @@ async def post_quiz_start(
 ) -> StreamingResponse:
     """Start one grounded quiz question for the selected workspace."""
     _reject_browser_origin(http_request)
+    enforce_rate_limit(
+        http_request,
+        scope="quiz_llm",
+        current_user=current_user,
+        capacity=10,
+        refill_period_seconds=60,
+    )
     assert_workspace_access(request.workspace_id, current_user, workspace_manager._repository, ["owner", "teacher", "student", "viewer"])
     return StreamingResponse(
         stream_quiz_start_events(request, http_request, _get_llm_client, _sse),

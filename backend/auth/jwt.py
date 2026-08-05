@@ -22,6 +22,10 @@ def _jwt_secret() -> str:
     return secret
 
 
+def get_jwt_secret() -> str:
+    return _jwt_secret()
+
+
 def create_access_token(subject: str, email: str, provider: str, provider_id: str, role: str) -> str:
     now = datetime.now(timezone.utc)
     payload = {

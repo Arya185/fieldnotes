@@ -6,14 +6,9 @@ import logging
 import sqlite3
 from pathlib import Path
 
+from backend.migrations import forget_registry_migration, migrate_registry_database
+
 logger = logging.getLogger("fieldnotes.registry")
-
-SCHEMA_VERSION = 1
-
-SQL_FILES = [
-    Path(__file__).resolve().parent.parent / "sql" / "registry.sql",
-    Path(__file__).resolve().parent.parent / "sql" / "workspace.sql",
-]
 
 
 class RegistryDatabase:
@@ -39,11 +34,7 @@ class RegistryDatabase:
             if self.db_path.exists() and not self._has_valid_sqlite_header(self.db_path):
                 raise sqlite3.DatabaseError("registry database file header is invalid")
 
-            with self.connect() as connection:
-                for sql_file in SQL_FILES:
-                    connection.executescript(sql_file.read_text(encoding="utf-8"))
-                self._ensure_schema_version(connection)
-                connection.commit()
+            migrate_registry_database(self.db_path)
         except sqlite3.DatabaseError as exc:
             self._recover_database(exc)
 
@@ -54,24 +45,17 @@ class RegistryDatabase:
         except OSError:
             return False
 
-    def _ensure_schema_version(self, connection: sqlite3.Connection) -> None:
-        row = connection.execute("SELECT version FROM schema_version ORDER BY rowid DESC LIMIT 1").fetchone()
-        if row is None:
-            connection.execute("DELETE FROM schema_version")
-            connection.execute("INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,))
-
     def _recover_database(self, exc: Exception) -> None:
         logger.warning("registry database recovery: %s", exc, exc_info=(type(exc), exc, exc.__traceback__))
         self.last_recovery_warning = "Registry database could not be read and was recreated."
         self._quarantine_database()
+        # The file at self.db_path is now quarantined-and-replaced; drop the
+        # stale per-process "already migrated" marker before re-migrating.
+        forget_registry_migration(self.db_path)
         self._initialize_schema()
 
     def _initialize_schema(self) -> None:
-        with self.connect() as connection:
-            for sql_file in SQL_FILES:
-                connection.executescript(sql_file.read_text(encoding="utf-8"))
-            self._ensure_schema_version(connection)
-            connection.commit()
+        migrate_registry_database(self.db_path)
 
     def _quarantine_database(self) -> None:
         if not self.db_path.exists():

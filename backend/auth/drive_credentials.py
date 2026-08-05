@@ -1,15 +1,55 @@
-"""Persistence for the optional Google Drive import integration's OAuth credential.
+"""Persistence for optional Google Drive import credentials.
 
-The access/refresh token here is used only to list and download files at
-import time (backend/services/google_drive.py). Once a file is imported it
-is written into the local workspace folder and behaves exactly like any
-other local file — the token is never used again for that file.
+Encrypted at rest. Plaintext fallback forbidden.
 """
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from datetime import UTC, datetime
+
+from cryptography.fernet import Fernet, InvalidToken
+
+from backend.auth.security import is_non_local_environment
+
+TOKEN_ENCRYPTION_KEY_ENV = "FIELDNOTES_TOKEN_ENCRYPTION_KEY"
+
+
+def validate_token_encryption_configuration(*, require_for_startup: bool) -> str:
+    if os.environ.get(TOKEN_ENCRYPTION_KEY_ENV):
+        return "configured"
+    if require_for_startup and is_non_local_environment():
+        raise RuntimeError(
+            f"{TOKEN_ENCRYPTION_KEY_ENV} must be set in non-local environments."
+        )
+    return "optional_unset"
+
+
+def _get_cipher() -> Fernet:
+    key = os.environ.get(TOKEN_ENCRYPTION_KEY_ENV)
+    if not key:
+        raise RuntimeError(
+            f"{TOKEN_ENCRYPTION_KEY_ENV} is required before storing or reading Google Drive credentials."
+        )
+    return Fernet(key.encode("utf-8"))
+
+
+def _encrypt_token(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return _get_cipher().encrypt(value.encode("utf-8")).decode("utf-8")
+
+
+def _decrypt_token(value: str | None) -> str | None:
+    if value is None:
+        return None
+    try:
+        return _get_cipher().decrypt(value.encode("utf-8")).decode("utf-8")
+    except InvalidToken as exc:
+        raise RuntimeError(
+            "Stored Google Drive credentials could not be decrypted. Reconnect Google Drive."
+        ) from exc
 
 
 def save_drive_credentials(
@@ -33,7 +73,14 @@ def save_drive_credentials(
           scope = excluded.scope,
           updated_at = excluded.updated_at
         """,
-        (user_id, access_token, refresh_token, expires_at, scope, datetime.now(UTC).isoformat()),
+        (
+            user_id,
+            _encrypt_token(access_token),
+            _encrypt_token(refresh_token),
+            expires_at,
+            scope,
+            datetime.now(UTC).isoformat(),
+        ),
     )
     connection.commit()
 
@@ -43,4 +90,11 @@ def load_drive_credentials(connection: sqlite3.Connection, user_id: str) -> dict
         "SELECT access_token, refresh_token, expires_at, scope FROM google_drive_credentials WHERE user_id = ?",
         (user_id,),
     ).fetchone()
-    return None if row is None else dict(row)
+    if row is None:
+        return None
+    return {
+        "access_token": _decrypt_token(row["access_token"]),
+        "refresh_token": _decrypt_token(row["refresh_token"]),
+        "expires_at": row["expires_at"],
+        "scope": row["scope"],
+    }

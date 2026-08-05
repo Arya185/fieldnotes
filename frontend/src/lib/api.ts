@@ -19,6 +19,11 @@ import type {
 } from "../types";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
+const CSRF_COOKIE_CANDIDATES = [
+  "__Host-fieldnotes_csrf",
+  "__Secure-fieldnotes_csrf",
+  "fieldnotes_csrf",
+];
 
 interface ErrorPayload {
   code?: string;
@@ -76,11 +81,17 @@ async function requestJson<T>(
   input: RequestInfo,
   init?: RequestInit,
 ): Promise<T> {
+  const method = (init?.method ?? "GET").toUpperCase();
+  const csrfHeaders =
+    method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE"
+      ? buildCsrfHeader()
+      : {};
   const response = await fetch(input, {
     ...init,
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
+      ...csrfHeaders,
       ...(init?.headers ?? {}),
     },
   });
@@ -88,6 +99,25 @@ async function requestJson<T>(
     throw await buildApiError(response);
   }
   return (await response.json()) as T;
+}
+
+function readCookie(name: string): string | null {
+  const prefix = `${name}=`;
+  const match = document.cookie
+    .split(";")
+    .map((item) => item.trim())
+    .find((item) => item.startsWith(prefix));
+  return match ? decodeURIComponent(match.slice(prefix.length)) : null;
+}
+
+function buildCsrfHeader(): Record<string, string> {
+  for (const name of CSRF_COOKIE_CANDIDATES) {
+    const token = readCookie(name);
+    if (token) {
+      return { "X-CSRF-Token": token };
+    }
+  }
+  return {};
 }
 
 export async function postIndex(
@@ -184,7 +214,10 @@ async function consumeSse<TEvent>(
   const response = await fetch(endpoint, {
     method: "POST",
     credentials: "include",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...buildCsrfHeader(),
+    },
     body: JSON.stringify(payload),
     signal,
   });
@@ -243,8 +276,10 @@ export async function importGoogleDriveFiles(
   });
 }
 
-export async function getStudyPlans(): Promise<unknown> {
-  return requestJson<unknown>(`${API_BASE}/study-plans`);
+export async function getStudyPlans(workspace_id: string): Promise<unknown> {
+  return requestJson<unknown>(
+    `${API_BASE}/study-plans?workspace_id=${encodeURIComponent(workspace_id)}`,
+  );
 }
 
 export async function createStudyPlan(payload: { workspace_id: string; title: string; exam_date: string; hours_per_day?: number; pace?: string; }) {

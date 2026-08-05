@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from backend.db import connect_sqlite, initialize_schema
+from backend.migrations import migrate_workspace_database
 
 
 @dataclass(frozen=True)
@@ -29,16 +29,12 @@ def get_workspace_paths(workspace_root: Path) -> WorkspacePaths:
 
 
 def initialize_workspace(workspace_root: Path) -> WorkspacePaths:
-    """Ensure local workspace directories and SQLite schema exist."""
+    """Ensure local workspace directories exist and migrate schema to head."""
 
     paths = get_workspace_paths(workspace_root)
     paths.fieldnotes_dir.mkdir(parents=True, exist_ok=True)
     paths.artifacts_dir.mkdir(parents=True, exist_ok=True)
 
-    connection = connect_sqlite(paths.db_path)
-    try:
-        initialize_schema(connection)
-    finally:
-        connection.close()
+    migrate_workspace_database(paths.db_path)
 
     return paths

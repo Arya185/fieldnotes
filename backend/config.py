@@ -281,6 +281,10 @@ def _validate_live_llm_configuration() -> None:
 def validate_runtime_configuration() -> StartupDiagnostics:
     """Validate startup configuration and local runtime prerequisites."""
 
+    from backend.auth.drive_credentials import validate_token_encryption_configuration
+    from backend.auth.security import validate_auth_runtime_configuration
+    from backend.migrations import migrate_all_workspace_databases, migrate_registry_database
+
     retrieval_provider = validate_retrieval_provider_name(
         env_value("FIELDNOTES_RETRIEVAL_PROVIDER", DEFAULT_RETRIEVAL_PROVIDER)
     )
@@ -320,11 +324,17 @@ def validate_runtime_configuration() -> StartupDiagnostics:
     responses_api_check = "ok" if fake_llm else "configured"
 
     startup_checks = {
+        "auth_mode": validate_auth_runtime_configuration(),
+        "token_encryption": validate_token_encryption_configuration(
+            require_for_startup=True
+        ),
         "responses_api": responses_api_check,
         "workspace_permissions": _validate_workspace_permissions(),
         "sqlite_write_access": _validate_sqlite_write_access(),
         "sandbox": _validate_sandbox_runtime(),
     }
+    migrate_registry_database(WORKSPACE_REGISTRY_DB_PATH)
+    migrate_all_workspace_databases(WORKSPACE_REGISTRY_DB_PATH)
 
     return StartupDiagnostics(
         version=FIELDNOTES_VERSION,

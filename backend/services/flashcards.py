@@ -151,7 +151,8 @@ def generate_flashcards_for_workspace(
             if item.source_anchor not in valid_anchors or "#" not in item.source_anchor:
                 continue
             file_id, locator = item.source_anchor.split("#", 1)
-            if load_chunk_by_anchor(connection, file_id, locator) is None:
+            chunk_row = load_chunk_by_anchor(connection, file_id, locator)
+            if chunk_row is None:
                 continue
             file_path = load_file_path_by_id(connection, file_id) or file_id
 
@@ -166,6 +167,7 @@ def generate_flashcards_for_workspace(
                 "source_document": file_path,
                 "source_locator": locator,
                 "source_anchor": item.source_anchor,
+                "source_chunk_id": str(chunk_row["id"]),
                 "review_interval": 0.0,
                 "ease_factor": 2.5,
                 "next_review": today_iso,

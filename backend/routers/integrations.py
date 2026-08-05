@@ -3,13 +3,14 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from backend.auth.dependencies import get_current_user
 from backend.auth.drive_credentials import load_drive_credentials, save_drive_credentials
 from backend.auth.models import AuthenticatedUser
 from backend.auth.oauth import GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+from backend.auth.security import assert_workspace_access, enforce_rate_limit
 from backend.config import WORKSPACE_REGISTRY_DB_PATH
 from backend.indexer.registry_database import RegistryDatabase
 from backend.indexer.workspace_manager import workspace_manager
@@ -106,11 +107,19 @@ def get_google_drive_status(current_user: AuthenticatedUser = Depends(get_curren
 
 @router.get("/integrations/google-drive/files")
 async def get_google_drive_files(
+    request: Request,
     folder_id: str | None = None,
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> dict[str, list[dict[str, object]]]:
     """List importable files in one Drive folder (or the user's root)."""
 
+    enforce_rate_limit(
+        request,
+        scope="google_drive_files",
+        current_user=current_user,
+        capacity=12,
+        refill_period_seconds=60,
+    )
     access_token = await _resolve_drive_access_token(current_user)
     try:
         files = await list_drive_files(access_token, folder_id=folder_id)
@@ -127,6 +136,7 @@ async def get_google_drive_files(
 @router.post("/integrations/google-drive/import")
 async def post_google_drive_import(
     payload: DriveImportRequest,
+    request: Request,
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> dict[str, list[str]]:
     """Download the selected Drive files into the workspace's local folder.
@@ -139,6 +149,19 @@ async def post_google_drive_import(
     workspace = workspace_manager.get(payload.workspace_id)
     if workspace is None:
         raise HTTPException(status_code=404, detail="Unknown workspace_id")
+    assert_workspace_access(
+        payload.workspace_id,
+        current_user,
+        workspace_manager._repository,
+        ["owner", "teacher", "student", "viewer"],
+    )
+    enforce_rate_limit(
+        request,
+        scope="google_drive_import",
+        current_user=current_user,
+        capacity=6,
+        refill_period_seconds=60,
+    )
 
     access_token = await _resolve_drive_access_token(current_user)
     try:

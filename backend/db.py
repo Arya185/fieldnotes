@@ -9,6 +9,8 @@ from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 
+from backend.migrations import forget_workspace_migration, migrate_workspace_database
+
 logger = logging.getLogger("fieldnotes.storage")
 
 CURRENT_SCHEMA_VERSION = 2
@@ -116,17 +118,20 @@ def connect_sqlite(db_path: Path, *, validate_integrity: bool = True) -> sqlite3
         _ensure_workspace_storage_healthy(db_path)
 
     connection = _open_sqlite_connection(db_path)
+    initialize_schema(connection)
     if validate_integrity and db_path.exists():
         _assert_integrity(connection)
     return connection
 
 
 def initialize_schema(connection: sqlite3.Connection) -> None:
-    """Create or migrate schema objects without data loss."""
+    """Upgrade one workspace database to current Alembic head."""
 
-    connection.executescript(BASE_SCHEMA_SQL)
-    version = _ensure_schema_version_table(connection)
-    _apply_migrations(connection, version)
+    row = connection.execute("PRAGMA database_list").fetchone()
+    if row is None:
+        raise RuntimeError("Could not resolve workspace database path")
+    db_path = Path(str(row[2]))
+    migrate_workspace_database(db_path, connection=connection)
     connection.commit()
 
 
@@ -265,6 +270,9 @@ def _repair_workspace_storage(db_path: Path, initial_exc: Exception) -> None:
 
     workspace_root = db_path.parent.parent
     quarantine_paths = _quarantine_database_files(db_path)
+    # The file at db_path is now the quarantined-and-replaced one; the
+    # per-process "already migrated" marker from before must not leak onto it.
+    forget_workspace_migration(db_path)
     _create_replacement_database(db_path)
 
     if _workspace_has_rebuild_sources(workspace_root):

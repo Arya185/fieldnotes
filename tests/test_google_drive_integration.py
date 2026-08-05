@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 os.environ.setdefault("FIELDNOTES_USE_FAKE_LLM", "1")
+os.environ.setdefault("FIELDNOTES_TOKEN_ENCRYPTION_KEY", "Z5c5qwSHl46AMkYhNpkx0A3VPl08zmvlaR271GGBq4w=")
 
 from fastapi.testclient import TestClient
 
@@ -95,7 +96,14 @@ class GoogleDriveServiceTests(unittest.TestCase):
 
 class GoogleDriveRouterTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.env_patcher = patch.dict(os.environ, {"FIELDNOTES_USE_FAKE_LLM": "1"}, clear=True)
+        self.env_patcher = patch.dict(
+            os.environ,
+            {
+                "FIELDNOTES_USE_FAKE_LLM": "1",
+                "FIELDNOTES_TOKEN_ENCRYPTION_KEY": "Z5c5qwSHl46AMkYhNpkx0A3VPl08zmvlaR271GGBq4w=",
+            },
+            clear=True,
+        )
         self.env_patcher.start()
         self.client = TestClient(app)
         registry = RegistryDatabase(WORKSPACE_REGISTRY_DB_PATH)
@@ -151,7 +159,14 @@ class GoogleDriveImportPipelineTests(unittest.TestCase):
     pipeline as a locally-added file — no parallel ingestion path."""
 
     def setUp(self) -> None:
-        self.env_patcher = patch.dict(os.environ, {"FIELDNOTES_USE_FAKE_LLM": "1"}, clear=True)
+        self.env_patcher = patch.dict(
+            os.environ,
+            {
+                "FIELDNOTES_USE_FAKE_LLM": "1",
+                "FIELDNOTES_TOKEN_ENCRYPTION_KEY": "Z5c5qwSHl46AMkYhNpkx0A3VPl08zmvlaR271GGBq4w=",
+            },
+            clear=True,
+        )
         self.env_patcher.start()
         self.client = TestClient(app)
         self.temp_dir = tempfile.TemporaryDirectory()

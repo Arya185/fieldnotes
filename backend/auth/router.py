@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import json
 import os
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urljoin
 
@@ -11,21 +14,106 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 
-from backend.auth.cookies import SESSION_COOKIE_NAME, access_cookie_header, clear_cookie_header, refresh_cookie_header
-from backend.auth.jwt import create_access_token, create_refresh_token, decode_token
-from backend.auth.models import TokenResponse
+from backend.auth.cookies import (
+    CSRF_COOKIE_NAME,
+    OAUTH_STATE_COOKIE_NAME,
+    REFRESH_COOKIE_NAME,
+    SESSION_COOKIE_NAME,
+    access_cookie_header,
+    clear_cookie_header,
+    csrf_cookie_header,
+    oauth_state_cookie_header,
+    refresh_cookie_header,
+)
 from backend.auth.drive_credentials import save_drive_credentials
-from backend.auth.oauth import GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, GITHUB_TOKEN_URL, GITHUB_USERINFO_URL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_DRIVE_IMPORT_SCOPE, GOOGLE_TOKEN_URL, GOOGLE_USERINFO_URL, github_authorize_url, google_authorize_url, OAUTH_CALLBACK_PATH
-from backend.auth.security import _get_token_from_request, auth_config, get_current_user
+from backend.auth.jwt import create_access_token, create_refresh_token, decode_token, get_jwt_secret
+from backend.auth.models import TokenResponse
+from backend.auth.oauth import (
+    GITHUB_CLIENT_ID,
+    GITHUB_CLIENT_SECRET,
+    GITHUB_TOKEN_URL,
+    GITHUB_USERINFO_URL,
+    GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET,
+    GOOGLE_DRIVE_IMPORT_SCOPE,
+    GOOGLE_TOKEN_URL,
+    GOOGLE_USERINFO_URL,
+    OAUTH_CALLBACK_PATH,
+    github_authorize_url,
+    google_authorize_url,
+)
+from backend.auth.security import (
+    _get_token_from_request,
+    auth_config,
+    enforce_rate_limit,
+    get_current_user,
+)
 from backend.config import WORKSPACE_REGISTRY_DB_PATH
 from backend.indexer.registry_database import RegistryDatabase
 
 router = APIRouter()
 
+_OAUTH_STATE_TTL_SECONDS = 600
+
 
 def _build_redirect_url(request: Request, path: str) -> str:
     base = request.url._url.rstrip("/")
     return urljoin(base, path)
+
+
+def _csrf_token() -> str:
+    return secrets.token_urlsafe(24)
+
+
+def _sign_oauth_state(state: str) -> str:
+    expires_at = int((datetime.now(timezone.utc) + timedelta(seconds=_OAUTH_STATE_TTL_SECONDS)).timestamp())
+    payload = f"{state}:{expires_at}"
+    signature = hmac.new(
+        get_jwt_secret().encode("utf-8"),
+        payload.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    token = f"{payload}:{signature}"
+    return base64.urlsafe_b64encode(token.encode("utf-8")).decode("utf-8")
+
+
+def _validate_oauth_state_cookie(request: Request, state: str | None) -> None:
+    if not state:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing OAuth state")
+    encoded = request.cookies.get(OAUTH_STATE_COOKIE_NAME)
+    if not encoded:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing OAuth state cookie")
+    try:
+        decoded = base64.urlsafe_b64decode(encoded.encode("utf-8")).decode("utf-8")
+        stored_state, expires_at_raw, signature = decoded.split(":", 2)
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid OAuth state cookie") from exc
+    payload = f"{stored_state}:{expires_at_raw}"
+    expected_signature = hmac.new(
+        get_jwt_secret().encode("utf-8"),
+        payload.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    if not secrets.compare_digest(signature, expected_signature):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid OAuth state signature")
+    if not secrets.compare_digest(stored_state, state):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OAuth state mismatch")
+    expires_at = int(expires_at_raw)
+    if expires_at < int(datetime.now(timezone.utc).timestamp()):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OAuth state expired")
+
+
+def _apply_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
+    response.headers["Set-Cookie"] = access_cookie_header(access_token)
+    response.headers.append("Set-Cookie", refresh_cookie_header(refresh_token))
+    response.headers.append("Set-Cookie", csrf_cookie_header(_csrf_token()))
+
+
+def _clear_auth_cookies(response: Response) -> None:
+    response.headers["Set-Cookie"] = clear_cookie_header(SESSION_COOKIE_NAME)
+    response.headers.append("Set-Cookie", clear_cookie_header(REFRESH_COOKIE_NAME))
+    response.headers.append("Set-Cookie", clear_cookie_header(CSRF_COOKIE_NAME))
+    response.headers.append("Set-Cookie", clear_cookie_header(OAUTH_STATE_COOKIE_NAME))
 
 
 @router.get("/auth/providers")
@@ -36,36 +124,41 @@ async def list_auth_providers() -> dict[str, bool]:
     }
 
 
+def _start_oauth(response: Response, *, state: str) -> None:
+    response.headers["Set-Cookie"] = oauth_state_cookie_header(_sign_oauth_state(state))
+
+
 @router.get("/auth/login/google")
-async def login_google(request: Request) -> dict[str, str]:
+async def login_google(request: Request, response: Response) -> dict[str, str]:
     if not auth_config.enabled:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Authentication disabled")
+    enforce_rate_limit(request, scope="auth_login", capacity=10, refill_period_seconds=60)
     state = secrets.token_urlsafe(16)
+    _start_oauth(response, state=state)
     redirect_uri = _build_redirect_url(request, f"{OAUTH_CALLBACK_PATH}?provider=google")
     return {"redirect_url": google_authorize_url(state, redirect_uri)}
 
 
 @router.get("/auth/login/github")
-async def login_github(request: Request) -> dict[str, str]:
+async def login_github(request: Request, response: Response) -> dict[str, str]:
     if not auth_config.enabled:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Authentication disabled")
+    enforce_rate_limit(request, scope="auth_login", capacity=10, refill_period_seconds=60)
     state = secrets.token_urlsafe(16)
+    _start_oauth(response, state=state)
     redirect_uri = _build_redirect_url(request, f"{OAUTH_CALLBACK_PATH}?provider=github")
     return {"redirect_url": github_authorize_url(state, redirect_uri)}
 
 
 @router.get("/auth/login/google-drive")
-async def login_google_drive(request: Request) -> dict[str, str]:
-    """Start the Google OAuth consent flow with the added Drive read-only scope.
-
-    Separate from the plain login flow so a normal sign-in never requests
-    more access than it needs; this one is only triggered by the explicit
-    "Import from Google Drive" action.
-    """
+async def login_google_drive(request: Request, response: Response) -> dict[str, str]:
+    """Start Google OAuth flow with Drive read-only scope."""
 
     if not auth_config.enabled:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Authentication disabled")
+    enforce_rate_limit(request, scope="auth_login", capacity=10, refill_period_seconds=60)
     state = secrets.token_urlsafe(16)
+    _start_oauth(response, state=state)
     redirect_uri = _build_redirect_url(request, f"{OAUTH_CALLBACK_PATH}?provider=google&purpose=drive")
     return {
         "redirect_url": google_authorize_url(
@@ -78,7 +171,11 @@ async def login_google_drive(request: Request) -> dict[str, str]:
     }
 
 
-async def _exchange_token(url: str, data: dict[str, Any], headers: dict[str, str] | None = None) -> dict[str, Any]:
+async def _exchange_token(
+    url: str,
+    data: dict[str, Any],
+    headers: dict[str, str] | None = None,
+) -> dict[str, Any]:
     async with httpx.AsyncClient() as client:
         response = await client.post(url, data=data, headers=headers or {}, timeout=20.0)
         response.raise_for_status()
@@ -87,14 +184,22 @@ async def _exchange_token(url: str, data: dict[str, Any], headers: dict[str, str
 
 async def _fetch_google_userinfo(access_token: str) -> dict[str, Any]:
     async with httpx.AsyncClient() as client:
-        response = await client.get(GOOGLE_USERINFO_URL, headers={"Authorization": f"Bearer {access_token}"}, timeout=20.0)
+        response = await client.get(
+            GOOGLE_USERINFO_URL,
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=20.0,
+        )
         response.raise_for_status()
         return response.json()
 
 
 async def _fetch_github_userinfo(access_token: str) -> dict[str, Any]:
     async with httpx.AsyncClient() as client:
-        response = await client.get(GITHUB_USERINFO_URL, headers={"Authorization": f"token {access_token}"}, timeout=20.0)
+        response = await client.get(
+            GITHUB_USERINFO_URL,
+            headers={"Authorization": f"token {access_token}"},
+            timeout=20.0,
+        )
         response.raise_for_status()
         return response.json()
 
@@ -109,10 +214,16 @@ async def oauth_callback(
 ) -> RedirectResponse:
     if not auth_config.enabled:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Authentication disabled")
+    enforce_rate_limit(request, scope="auth_callback", capacity=10, refill_period_seconds=60)
     if not code or not provider:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing OAuth code or provider")
+    _validate_oauth_state_cookie(request, state)
 
-    callback_query = "?provider=google&purpose=drive" if provider == "google" and purpose == "drive" else f"?provider={provider}"
+    callback_query = (
+        "?provider=google&purpose=drive"
+        if provider == "google" and purpose == "drive"
+        else f"?provider={provider}"
+    )
     redirect_uri = _build_redirect_url(request, f"{OAUTH_CALLBACK_PATH}{callback_query}")
     if provider == "google":
         token_data = {
@@ -139,7 +250,11 @@ async def oauth_callback(
             "client_secret": GITHUB_CLIENT_SECRET,
             "redirect_uri": redirect_uri,
         }
-        token_response = await _exchange_token(GITHUB_TOKEN_URL, token_data, headers={"Accept": "application/json"})
+        token_response = await _exchange_token(
+            GITHUB_TOKEN_URL,
+            token_data,
+            headers={"Accept": "application/json"},
+        )
         access_token = str(token_response.get("access_token", ""))
         userinfo = await _fetch_github_userinfo(access_token)
         user_id = str(userinfo.get("id", ""))
@@ -155,7 +270,8 @@ async def oauth_callback(
         expires_at = None
         if isinstance(drive_expires_in, (int, float)):
             expires_at = datetime.fromtimestamp(
-                datetime.now(timezone.utc).timestamp() + float(drive_expires_in), tz=timezone.utc
+                datetime.now(timezone.utc).timestamp() + float(drive_expires_in),
+                tz=timezone.utc,
             ).isoformat()
         registry = RegistryDatabase(WORKSPACE_REGISTRY_DB_PATH)
         connection = registry.connect()
@@ -175,8 +291,8 @@ async def oauth_callback(
     refresh_token = create_refresh_token(subject, email, provider, provider_id, role="viewer")
 
     response = RedirectResponse(url="/")
-    response.headers["Set-Cookie"] = access_cookie_header(access_token)
-    response.headers.append("Set-Cookie", refresh_cookie_header(refresh_token))
+    _apply_auth_cookies(response, access_token, refresh_token)
+    response.headers.append("Set-Cookie", clear_cookie_header(OAUTH_STATE_COOKIE_NAME))
     return response
 
 
@@ -184,8 +300,9 @@ async def oauth_callback(
 async def refresh_token(request: Request, response: Response) -> TokenResponse:
     if not auth_config.enabled:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Authentication disabled")
+    enforce_rate_limit(request, scope="auth_refresh", capacity=10, refill_period_seconds=60)
 
-    token = request.cookies.get("fieldnotes_refresh")
+    token = request.cookies.get(REFRESH_COOKIE_NAME)
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing refresh token")
 
@@ -205,15 +322,16 @@ async def refresh_token(request: Request, response: Response) -> TokenResponse:
     access_token = create_access_token(subject, email, provider, provider_id, role=role)
     new_refresh_token = create_refresh_token(subject, email, provider, provider_id, role=role)
 
-    response.headers["Set-Cookie"] = access_cookie_header(access_token)
-    response.headers.append("Set-Cookie", refresh_cookie_header(new_refresh_token))
-    return TokenResponse(access_token=access_token, expires_in=int(os.environ.get("FIELDNOTES_JWT_ACCESS_LIFETIME", "900")))
+    _apply_auth_cookies(response, access_token, new_refresh_token)
+    return TokenResponse(
+        access_token=access_token,
+        expires_in=int(os.environ.get("FIELDNOTES_JWT_ACCESS_LIFETIME", "900")),
+    )
 
 
 @router.post("/auth/logout")
 async def logout(response: Response) -> dict[str, str]:
-    response.headers["Set-Cookie"] = clear_cookie_header(SESSION_COOKIE_NAME)
-    response.headers.append("Set-Cookie", clear_cookie_header("fieldnotes_refresh"))
+    _clear_auth_cookies(response)
     return {"status": "logged_out"}
 
 
@@ -236,11 +354,24 @@ async def auth_status(request: Request) -> dict[str, object]:
 
     token = _get_token_from_request(request)
     if not token:
-        return {"auth_enabled": True, "authenticated": False, "providers": await list_auth_providers()}
+        return {
+            "auth_enabled": True,
+            "authenticated": False,
+            "providers": await list_auth_providers(),
+        }
 
     try:
         user = get_current_user(request)
     except HTTPException:
-        return {"auth_enabled": True, "authenticated": False, "providers": await list_auth_providers()}
+        return {
+            "auth_enabled": True,
+            "authenticated": False,
+            "providers": await list_auth_providers(),
+        }
 
-    return {"auth_enabled": True, "authenticated": True, "user": user, "providers": await list_auth_providers()}
+    return {
+        "auth_enabled": True,
+        "authenticated": True,
+        "user": user,
+        "providers": await list_auth_providers(),
+    }

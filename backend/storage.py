@@ -284,90 +284,25 @@ def load_chunks_for_file(connection: sqlite3.Connection, file_id: str) -> list[P
 
 
 def ensure_study_tables(connection: sqlite3.Connection) -> None:
-    """Create study planner related tables if they do not exist."""
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS topics (
-            id TEXT PRIMARY KEY,
-            topic TEXT NOT NULL,
-            summary TEXT,
-            difficulty TEXT,
-            est_minutes INTEGER,
-            prerequisites_json TEXT,
-            file_id TEXT,
-            mastery_score REAL DEFAULT 0,
-            last_review TEXT,
-            review_count INTEGER DEFAULT 0,
-            quiz_average REAL DEFAULT 0,
-            completion_percentage REAL DEFAULT 0,
-            created_at TEXT
+    """Assert study tables exist after Alembic migration path has run."""
+
+    required_tables = {
+        "topics",
+        "topic_dependencies",
+        "study_plans",
+        "study_plan_items",
+        "flashcards",
+    }
+    rows = connection.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table'"
+    ).fetchall()
+    existing = {str(row["name"]) for row in rows}
+    missing = sorted(required_tables - existing)
+    if missing:
+        raise RuntimeError(
+            "Workspace study schema is missing required tables. Run workspace migrations to head: "
+            + ", ".join(missing)
         )
-        """
-    )
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS topic_dependencies (
-            id TEXT PRIMARY KEY,
-            prereq_id TEXT NOT NULL,
-            topic_id TEXT NOT NULL
-        )
-        """
-    )
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS study_plans (
-            id TEXT PRIMARY KEY,
-            title TEXT,
-            exam_date TEXT,
-            hours_per_day REAL,
-            pace TEXT,
-            created_at TEXT
-        )
-        """
-    )
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS study_plan_items (
-            id TEXT PRIMARY KEY,
-            plan_id TEXT NOT NULL,
-            topic_id TEXT,
-            date TEXT NOT NULL,
-            task_type TEXT NOT NULL,
-            duration_minutes INTEGER,
-            completed INTEGER DEFAULT 0,
-            score REAL
-        )
-        """
-    )
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS flashcards (
-            id TEXT PRIMARY KEY,
-            topic_id TEXT,
-            card_type TEXT NOT NULL,
-            question TEXT NOT NULL,
-            answer TEXT NOT NULL,
-            difficulty TEXT NOT NULL,
-            bloom_level TEXT NOT NULL,
-            source_document TEXT NOT NULL,
-            source_locator TEXT NOT NULL,
-            source_anchor TEXT NOT NULL,
-            review_interval REAL NOT NULL DEFAULT 0,
-            ease_factor REAL NOT NULL DEFAULT 2.5,
-            next_review TEXT NOT NULL,
-            last_review TEXT,
-            review_count INTEGER NOT NULL DEFAULT 0,
-            mastery_weight REAL NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL
-        )
-        """
-    )
-    connection.execute(
-        "CREATE INDEX IF NOT EXISTS idx_flashcards_topic ON flashcards(topic_id)"
-    )
-    connection.execute(
-        "CREATE INDEX IF NOT EXISTS idx_flashcards_next_review ON flashcards(next_review)"
-    )
 
 
 def upsert_topic(connection: sqlite3.Connection, topic_id: str, topic: str, summary: str | None, difficulty: str | None, est_minutes: int | None, prerequisites_json: str | None, file_id: str | None) -> None:
@@ -907,9 +842,9 @@ def insert_flashcard(connection: sqlite3.Connection, card: dict) -> None:
         """
         INSERT INTO flashcards (
           id, topic_id, card_type, question, answer, difficulty, bloom_level,
-          source_document, source_locator, source_anchor, review_interval, ease_factor,
+          source_document, source_locator, source_anchor, source_chunk_id, review_interval, ease_factor,
           next_review, last_review, review_count, mastery_weight, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             card["id"],
@@ -922,6 +857,7 @@ def insert_flashcard(connection: sqlite3.Connection, card: dict) -> None:
             card["source_document"],
             card["source_locator"],
             card["source_anchor"],
+            card.get("source_chunk_id"),
             card["review_interval"],
             card["ease_factor"],
             card["next_review"],
