@@ -32,6 +32,8 @@ from backend.auth.router import router as auth_router
 from backend.routers.study_plans import router as study_router
 from backend.routers.study_progress import router as study_progress_router
 from backend.routers.flashcards import router as flashcards_router
+from backend.routers.concept_map import router as concept_map_router
+from backend.routers.integrations import router as integrations_router
 from backend.auth.security import assert_workspace_access, require_workspace_role
 from backend.indexer.workspace_manager import WorkspaceManager, WorkspaceRecord, workspace_manager
 from backend.models import (
@@ -85,6 +87,8 @@ app.include_router(auth_router)
 app.include_router(study_router)
 app.include_router(study_progress_router)
 app.include_router(flashcards_router)
+app.include_router(concept_map_router)
+app.include_router(integrations_router)
 llm_client: LLMClient | object | None = None
 
 

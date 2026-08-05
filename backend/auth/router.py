@@ -14,8 +14,11 @@ from fastapi.responses import RedirectResponse
 from backend.auth.cookies import SESSION_COOKIE_NAME, access_cookie_header, clear_cookie_header, refresh_cookie_header
 from backend.auth.jwt import create_access_token, create_refresh_token, decode_token
 from backend.auth.models import TokenResponse
-from backend.auth.oauth import GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, GITHUB_TOKEN_URL, GITHUB_USERINFO_URL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_TOKEN_URL, GOOGLE_USERINFO_URL, github_authorize_url, google_authorize_url, OAUTH_CALLBACK_PATH
+from backend.auth.drive_credentials import save_drive_credentials
+from backend.auth.oauth import GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, GITHUB_TOKEN_URL, GITHUB_USERINFO_URL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_DRIVE_IMPORT_SCOPE, GOOGLE_TOKEN_URL, GOOGLE_USERINFO_URL, github_authorize_url, google_authorize_url, OAUTH_CALLBACK_PATH
 from backend.auth.security import _get_token_from_request, auth_config, get_current_user
+from backend.config import WORKSPACE_REGISTRY_DB_PATH
+from backend.indexer.registry_database import RegistryDatabase
 
 router = APIRouter()
 
@@ -51,6 +54,30 @@ async def login_github(request: Request) -> dict[str, str]:
     return {"redirect_url": github_authorize_url(state, redirect_uri)}
 
 
+@router.get("/auth/login/google-drive")
+async def login_google_drive(request: Request) -> dict[str, str]:
+    """Start the Google OAuth consent flow with the added Drive read-only scope.
+
+    Separate from the plain login flow so a normal sign-in never requests
+    more access than it needs; this one is only triggered by the explicit
+    "Import from Google Drive" action.
+    """
+
+    if not auth_config.enabled:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Authentication disabled")
+    state = secrets.token_urlsafe(16)
+    redirect_uri = _build_redirect_url(request, f"{OAUTH_CALLBACK_PATH}?provider=google&purpose=drive")
+    return {
+        "redirect_url": google_authorize_url(
+            state,
+            redirect_uri,
+            scope=GOOGLE_DRIVE_IMPORT_SCOPE,
+            access_type="offline",
+            prompt="consent",
+        )
+    }
+
+
 async def _exchange_token(url: str, data: dict[str, Any], headers: dict[str, str] | None = None) -> dict[str, Any]:
     async with httpx.AsyncClient() as client:
         response = await client.post(url, data=data, headers=headers or {}, timeout=20.0)
@@ -73,13 +100,20 @@ async def _fetch_github_userinfo(access_token: str) -> dict[str, Any]:
 
 
 @router.get("/auth/callback")
-async def oauth_callback(request: Request, code: str | None = None, state: str | None = None, provider: str | None = None) -> RedirectResponse:
+async def oauth_callback(
+    request: Request,
+    code: str | None = None,
+    state: str | None = None,
+    provider: str | None = None,
+    purpose: str | None = None,
+) -> RedirectResponse:
     if not auth_config.enabled:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Authentication disabled")
     if not code or not provider:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing OAuth code or provider")
 
-    redirect_uri = _build_redirect_url(request, f"{OAUTH_CALLBACK_PATH}?provider={provider}")
+    callback_query = "?provider=google&purpose=drive" if provider == "google" and purpose == "drive" else f"?provider={provider}"
+    redirect_uri = _build_redirect_url(request, f"{OAUTH_CALLBACK_PATH}{callback_query}")
     if provider == "google":
         token_data = {
             "code": code,
@@ -94,6 +128,10 @@ async def oauth_callback(request: Request, code: str | None = None, state: str |
         email = str(userinfo.get("email", ""))
         name = str(userinfo.get("name", email))
         provider_id = user_id
+        drive_access_token = str(token_response.get("access_token", ""))
+        drive_refresh_token = token_response.get("refresh_token")
+        drive_expires_in = token_response.get("expires_in")
+        drive_scope = token_response.get("scope")
     elif provider == "github":
         token_data = {
             "code": code,
@@ -112,6 +150,27 @@ async def oauth_callback(request: Request, code: str | None = None, state: str |
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown OAuth provider")
 
     subject = f"{provider}:{provider_id}"
+
+    if provider == "google" and purpose == "drive":
+        expires_at = None
+        if isinstance(drive_expires_in, (int, float)):
+            expires_at = datetime.fromtimestamp(
+                datetime.now(timezone.utc).timestamp() + float(drive_expires_in), tz=timezone.utc
+            ).isoformat()
+        registry = RegistryDatabase(WORKSPACE_REGISTRY_DB_PATH)
+        connection = registry.connect()
+        try:
+            save_drive_credentials(
+                connection,
+                subject,
+                access_token=drive_access_token,
+                refresh_token=drive_refresh_token,
+                expires_at=expires_at,
+                scope=drive_scope,
+            )
+        finally:
+            connection.close()
+
     access_token = create_access_token(subject, email, provider, provider_id, role="viewer")
     refresh_token = create_refresh_token(subject, email, provider, provider_id, role="viewer")
 

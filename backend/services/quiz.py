@@ -23,9 +23,12 @@ from backend.models import (
 from backend.storage import (
     create_artifact,
     create_quiz_attempt,
+    get_concept_id_by_name,
     load_chunk_by_anchor,
     load_file_path_by_id,
+    load_most_recently_answered_concept,
     load_quiz_attempt,
+    load_recent_quiz_attempts_for_concept,
     record_quiz_answer,
     upsert_concept_updates,
     validate_citation_anchors,
@@ -36,7 +39,17 @@ from .starters import build_refreshed_starters
 from backend.services.planner import adjust_plan_on_quiz_result
 
 
-def load_quiz_concept_names(connection: sqlite3.Connection) -> list[str]:
+def load_quiz_concept_names(
+    connection: sqlite3.Connection, exclude_recent: str | None = None
+) -> list[str]:
+    """Pick candidate concepts for the next question, shakiest first.
+
+    `exclude_recent` is the name of the concept behind the just-answered
+    question. Rather than dropping it, it is pushed to the back of the
+    candidate list so a missed concept still comes back for review, just not
+    as the very next question — avoiding immediate drilling.
+    """
+
     rows = connection.execute(
         """
         SELECT name
@@ -45,7 +58,36 @@ def load_quiz_concept_names(connection: sqlite3.Connection) -> list[str]:
         LIMIT 5
         """
     ).fetchall()
-    return [str(row["name"]) for row in rows]
+    names = [str(row["name"]) for row in rows]
+    if exclude_recent and exclude_recent in names and len(names) > 1:
+        names.remove(exclude_recent)
+        names.append(exclude_recent)
+    return names
+
+
+def compute_quiz_difficulty(connection: sqlite3.Connection, concept_id: str | None) -> str:
+    """Scale next-question difficulty from rolling accuracy on one concept this session.
+
+    Two-in-a-row correct raises difficulty to "hard" (cross-passage synthesis).
+    A miss on the most recent attempt drops it to "easy" (single-fact recall)
+    so a requeued concept is gentler the next time it comes up. No history
+    (first time this concept is quizzed) stays "medium".
+    """
+
+    if not concept_id:
+        return "medium"
+    recent = load_recent_quiz_attempts_for_concept(connection, concept_id, limit=5)
+    if not recent:
+        return "medium"
+    if not bool(recent[0]["is_correct"]):
+        return "easy"
+    streak = 0
+    for attempt in recent:
+        if bool(attempt["is_correct"]):
+            streak += 1
+        else:
+            break
+    return "hard" if streak >= 2 else "medium"
 
 
 async def stream_quiz_start_events(
@@ -64,7 +106,13 @@ async def stream_quiz_start_events(
         connection = connect_sqlite(workspace_record.db_path)
         try:
             retrieval_provider = get_retrieval_provider(connection)
-            concept_ids = request.concept_ids or load_quiz_concept_names(connection)
+            if request.concept_ids:
+                concept_ids = request.concept_ids
+            else:
+                previous = load_most_recently_answered_concept(connection)
+                concept_ids = load_quiz_concept_names(
+                    connection, exclude_recent=previous["name"] if previous else None
+                )
             concept_query = " ".join(concept_ids) or "important concepts"
             retrieval_results = retrieval_provider.search(concept_query, limit=5)
             if not retrieval_results:
@@ -74,9 +122,13 @@ async def stream_quiz_start_events(
                     "No indexed content available for quiz generation. Re-check the folder path and supported file types (pdf, pptx, docx, md, txt, csv)."
                 )
 
+            target_concept_id = get_concept_id_by_name(connection, concept_ids[0]) if concept_ids else None
+            difficulty = compute_quiz_difficulty(connection, target_concept_id)
+
             question = client.generate_quiz_question(
                 retrieval_results,
                 concept_ids,
+                difficulty=difficulty,
             )
             if "#" not in question.source_anchor:
                 raise ValueError("Quiz source_anchor is not a full anchor")
@@ -116,6 +168,7 @@ async def stream_quiz_start_events(
                 options=question.options,
                 source_label=f"{file_path} {locator}",
                 source_anchor=question.source_anchor,
+                difficulty=difficulty,
             ).model_dump()
         )
     except Exception as exc:
@@ -158,6 +211,7 @@ async def stream_quiz_answer_events(
                 connection,
                 [concept_update],
                 source_anchor=str(updated_attempt["source_anchor"]),
+                answer_id=request.attempt_id,
             )
             file_id, locator = str(updated_attempt["source_anchor"]).split("#", 1)
             chip = CitationChip(

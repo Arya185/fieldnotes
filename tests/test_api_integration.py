@@ -38,7 +38,7 @@ class FakeLLMClient:
     ):
         yield f"Grounded answer for {question}"
 
-    def generate_quiz_question(self, retrieval_results, concept_ids=None) -> QuizQuestionSchema:
+    def generate_quiz_question(self, retrieval_results, concept_ids=None, difficulty="medium") -> QuizQuestionSchema:
         first = retrieval_results[0]
         return QuizQuestionSchema(
             question="Which file contains the grounded concept?",
@@ -475,6 +475,41 @@ class ApiIntegrationTests(unittest.TestCase):
         step_types = [payload["step"] for payload in payloads if payload["event"] == "step"]
         self.assertIn("codegen", step_types)
         self.assertIn("execution", step_types)
+
+    @patch("backend.main.llm_client", new_callable=lambda: FakeLLMClient())
+    def test_ask_multi_hop_question_surfaces_sub_agent_handoffs(self, _fake_llm) -> None:
+        """A question needing local analysis genuinely orchestrates three sub-agents."""
+        ws = self.base / "ask-multi-agent"
+        build_csv_workspace(ws)
+        index = self.client.post("/index", json={"folder_path": str(ws)}).json()
+        self.client.get(index["events"])
+
+        ask = self.client.post(
+            "/ask",
+            json={"workspace_id": index["workspace_id"], "question": "Why does Trial 4 look different?"},
+        )
+        payloads = parse_sse_payloads(ask.text)
+        agent_labels = [
+            payload["label"] for payload in payloads if payload["event"] == "step" and payload["step"] == "agent"
+        ]
+        self.assertEqual(agent_labels, ["retrieval-agent", "analysis-agent", "synthesis-agent"])
+
+    @patch("backend.main.llm_client", new_callable=lambda: FakeLLMClient())
+    def test_ask_plain_retrieve_question_stays_single_agent(self, _fake_llm) -> None:
+        """A plain lookup question must not fabricate multi-agent hops."""
+        ws = self.base / "ask-single-agent"
+        build_csv_workspace(ws)
+        index = self.client.post("/index", json={"folder_path": str(ws)}).json()
+        self.client.get(index["events"])
+
+        ask = self.client.post(
+            "/ask",
+            json={"workspace_id": index["workspace_id"], "question": "What is the amplitude at time 1?"},
+        )
+        payloads = parse_sse_payloads(ask.text)
+        self.assertEqual(next(p for p in payloads if p["event"] == "intent")["intent"], "retrieve")
+        agent_steps = [payload for payload in payloads if payload["event"] == "step" and payload["step"] == "agent"]
+        self.assertEqual(agent_steps, [])
 
     @patch("backend.main.llm_client", new_callable=lambda: FakeLLMClient())
     def test_ask_persists_explainer_artifact(self, _fake_llm) -> None:

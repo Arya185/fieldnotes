@@ -1,7 +1,8 @@
+import { ConceptMapView } from "../components/ConceptMapView";
 import { EmptyState } from "../components/EmptyState";
 import { MarkdownBlock } from "../lib/markdown";
 import type { ArtifactPreview, NoteOverrides } from "../lib/appState/types";
-import type { ArtifactCard, NotebookResponse } from "../types";
+import type { ArtifactCard, ConceptMapResponse, NotebookResponse } from "../types";
 
 interface NotebookRouteProps {
   notebook: NotebookResponse;
@@ -23,6 +24,7 @@ interface NotebookRouteProps {
   onExportArtifact: (artifact: ArtifactCard) => void;
   onAskWithArtifact: (artifact: ArtifactCard) => void;
   onDeleteArtifact: (artifact: ArtifactCard) => void;
+  onJumpToSource: (anchor: string | undefined) => void;
 }
 
 export function NotebookRoute({
@@ -45,6 +47,7 @@ export function NotebookRoute({
   onExportArtifact,
   onAskWithArtifact,
   onDeleteArtifact,
+  onJumpToSource,
 }: NotebookRouteProps) {
   return (
     <section className="workspace-overview stack">
@@ -59,7 +62,7 @@ export function NotebookRoute({
           <button
             key={kind}
             className="tab"
-            aria-selected={artifactFilter === kind}
+            aria-pressed={artifactFilter === kind}
             onClick={() => onSetArtifactFilter(kind)}
           >
             {kind}
@@ -136,6 +139,11 @@ export function NotebookRoute({
           </header>
           {artifactPreview.kind === "image" ? (
             <img alt={artifactPreview.title} src={artifactPreview.content} />
+          ) : artifactPreview.kind === "concept_map" ? (
+            <ConceptMapView
+              graph={JSON.parse(artifactPreview.content) as ConceptMapResponse}
+              onNodeClick={onJumpToSource}
+            />
           ) : artifactPreview.kind === "json" ? (
             <pre>{artifactPreview.content}</pre>
           ) : (

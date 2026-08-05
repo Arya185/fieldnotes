@@ -173,6 +173,7 @@ export function installAppFetchMock() {
           options: ["alpha.txt", "beta.txt", "gamma.txt", "delta.txt"],
           source_label: "alpha.txt block1",
           source_anchor: "file_alpha#block1/b1",
+          difficulty: "medium",
         },
       ]);
     }

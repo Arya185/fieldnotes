@@ -77,6 +77,7 @@ export function useQuizState({
             options: event.options,
             sourceLabel: event.source_label,
             sourceAnchor: event.source_anchor,
+            difficulty: event.difficulty,
             explanation: undefined,
             lastConcept: undefined,
             completion: undefined,

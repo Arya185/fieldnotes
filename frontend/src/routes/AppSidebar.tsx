@@ -1,5 +1,6 @@
 import type { DragEventHandler } from "react";
 
+import { GoogleDriveImport } from "../components/GoogleDriveImport";
 import { LockBadge } from "../components/LockBadge";
 import { ModeBadge } from "../components/ModeBadge";
 import type { IndexHistoryEntry, StoredWorkspaceRecord } from "../lib/storage";
@@ -78,7 +79,7 @@ export function AppSidebar({
   }
 
   return (
-    <aside className="sidebar panel">
+    <aside className="sidebar panel" aria-label="Workspace sidebar">
       <section className="section sidebar-top">
         <div className="brand brand-tight">
           <div>
@@ -149,6 +150,9 @@ export function AppSidebar({
             </button>
           )}
         </div>
+        {!sidebarCollapsed && (
+          <GoogleDriveImport activeWorkspaceId={activeWorkspaceId} onImported={onReindexWorkspace} />
+        )}
         {!sidebarCollapsed && <p className="muted">{starterSummary}</p>}
         {!sidebarCollapsed && workspaceStatusHint(activeWorkspace?.status) && (
           <div className="hint-card">{workspaceStatusHint(activeWorkspace?.status)}</div>

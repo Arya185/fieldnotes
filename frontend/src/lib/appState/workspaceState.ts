@@ -1,7 +1,7 @@
 import type { Dispatch, DragEvent, SetStateAction } from "react";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
-import { fetchArtifact, getHealth, getNotebook, getSource, isWorkspaceNotFoundError, postIndex } from "../api";
+import { fetchArtifact, generateConceptMap, getHealth, getNotebook, getSource, isWorkspaceNotFoundError, postIndex } from "../api";
 import {
   loadDeveloperMode,
   loadIndexHistory,
@@ -146,6 +146,7 @@ export function useWorkspaceState({
   const [artifactSearch, setArtifactSearch] = useState("");
   const [artifactSort, setArtifactSort] = useState<"newest" | "oldest">("newest");
   const [artifactPreview, setArtifactPreview] = useState<ArtifactPreview | null>(null);
+  const [conceptMapLoading, setConceptMapLoading] = useState(false);
   const [pinnedArtifacts, setPinnedArtifacts] = useState<string[]>(readPinnedArtifacts);
   const [noteOverrides, setNoteOverrides] = useState<NoteOverrides>(() => readNoteOverrides(loadRecentWorkspaces()[0]?.workspaceId ?? null));
   const [sourceView, setSourceView] = useState<SourceViewState>({});
@@ -554,6 +555,21 @@ export function useWorkspaceState({
       if (!text.trim()) {
         throw new Error("Artifact empty.");
       }
+      if (card.title === "Concept map" && text.trim().startsWith("{")) {
+        const wrapper = JSON.parse(text) as { payload_text?: string };
+        if (wrapper.payload_text) {
+          setArtifactPreview({
+            artifactId: card.id,
+            title: card.title,
+            kind: "concept_map",
+            content: wrapper.payload_text,
+          });
+          setContextTab("notebook");
+          setContextPanelOpen(true);
+          setRoute("notebook");
+          return;
+        }
+      }
       setArtifactPreview({
         artifactId: card.id,
         title: card.title,
@@ -569,6 +585,35 @@ export function useWorkspaceState({
         return;
       }
       setErrorMessage(`Artifact open failed: ${(error as Error).message}`);
+    }
+  }
+
+  async function handleGenerateConceptMap() {
+    if (!activeWorkspaceId) {
+      return;
+    }
+    setConceptMapLoading(true);
+    try {
+      const graph = await generateConceptMap(activeWorkspaceId);
+      setArtifactPreview({
+        artifactId: graph.artifact_id ?? "concept_map",
+        title: "Concept map",
+        kind: "concept_map",
+        content: JSON.stringify({ nodes: graph.nodes, edges: graph.edges }),
+      });
+      setContextTab("notebook");
+      setContextPanelOpen(true);
+      setRoute("notebook");
+      setStatusMessage("Concept map ready.");
+      void loadNotebookForWorkspace(activeWorkspaceId);
+    } catch (error) {
+      if (isWorkspaceNotFoundError(error)) {
+        recoverMissingWorkspace(activeWorkspaceId);
+        return;
+      }
+      setErrorMessage(`Concept map failed: ${(error as Error).message}`);
+    } finally {
+      setConceptMapLoading(false);
     }
   }
 
@@ -677,6 +722,8 @@ export function useWorkspaceState({
     loadNotebookForWorkspace,
     handleIndex,
     handleOpenArtifact,
+    handleGenerateConceptMap,
+    conceptMapLoading,
     handleJumpToSource,
     handleBenchmarkImport,
     handleDropWorkspace,

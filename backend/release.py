@@ -63,7 +63,7 @@ class FakeLLMClient:
 
     def build_plan(self, question: str, intent_result: RouteIntentSchema) -> ExecutionPlan:
         steps = [PlanStep(step_type="retrieve", label="retrieve", query=question, limit=5)]
-        if intent_result.intent == "analyze":
+        if intent_result.intent in {"analyze", "visualize", "connect"}:
             steps.extend(
                 [
                     PlanStep(step_type="analyze", label="analyze"),
@@ -137,6 +137,7 @@ class FakeLLMClient:
         self,
         retrieval_results: list[RetrievalChunk],
         concept_ids: list[str] | None = None,
+        difficulty: str = "medium",
     ) -> QuizQuestionSchema:
         first = retrieval_results[0]
         correct = first.relative_path

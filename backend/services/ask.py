@@ -196,6 +196,17 @@ async def stream_ask_events(
                 yield sse(emitted_artifact.model_dump())
             emitted_artifacts.clear()
             if any(step.step_type == "execute_python" for step in execution_context_data.step_executions):
+                # Multi-agent hop: this question needed more than retrieval, so
+                # the retrieval agent hands off to the analysis agent.
+                yield sse(
+                    StepEvent(
+                        event="step",
+                        answer_id=answer_id,
+                        step="agent",
+                        label="retrieval-agent",
+                        status="ok",
+                    ).model_dump()
+                )
                 yield sse(
                     StepEvent(
                         event="step",
@@ -224,6 +235,27 @@ async def stream_ask_events(
                         status="ok" if execution_step and execution_step.status == "ok" else "failed",
                     ).model_dump()
                 )
+                # Hand off from the analysis agent to the synthesis agent, which
+                # reconciles retrieval evidence with the analysis output before
+                # the grounded answer is streamed below.
+                yield sse(
+                    StepEvent(
+                        event="step",
+                        answer_id=answer_id,
+                        step="agent",
+                        label="analysis-agent",
+                        status="ok",
+                    ).model_dump()
+                )
+                yield sse(
+                    StepEvent(
+                        event="step",
+                        answer_id=answer_id,
+                        step="agent",
+                        label="synthesis-agent",
+                        status="started",
+                    ).model_dump()
+                )
         elif should_run_analysis:
             connection = connect_sqlite(workspace_record.db_path)
             try:
@@ -232,6 +264,15 @@ async def stream_ask_events(
                 connection.close()
 
             if dataset_profiles:
+                yield sse(
+                    StepEvent(
+                        event="step",
+                        answer_id=answer_id,
+                        step="agent",
+                        label="retrieval-agent",
+                        status="ok",
+                    ).model_dump()
+                )
                 yield sse(
                     StepEvent(
                         event="step",
@@ -342,6 +383,24 @@ async def stream_ask_events(
                         "stderr": sandbox_result.stderr,
                         "result": sandbox_result.result_payload,
                     }
+                )
+                yield sse(
+                    StepEvent(
+                        event="step",
+                        answer_id=answer_id,
+                        step="agent",
+                        label="analysis-agent",
+                        status="ok",
+                    ).model_dump()
+                )
+                yield sse(
+                    StepEvent(
+                        event="step",
+                        answer_id=answer_id,
+                        step="agent",
+                        label="synthesis-agent",
+                        status="started",
+                    ).model_dump()
                 )
 
         answer_chunks: list[str] = []
@@ -458,6 +517,7 @@ async def stream_ask_events(
                 connection,
                 concepts,
                 source_anchor=valid_chips[0].anchor if valid_chips else None,
+                answer_id=answer_id,
             )
             connection.commit()
         finally:

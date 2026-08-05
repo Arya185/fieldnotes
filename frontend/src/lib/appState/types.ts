@@ -29,7 +29,7 @@ export interface ChatMessage {
 export interface ArtifactPreview {
   artifactId: string;
   title: string;
-  kind: "image" | "text" | "json";
+  kind: "image" | "text" | "json" | "concept_map";
   content: string;
 }
 
@@ -67,6 +67,7 @@ export interface QuizState {
   sourceAnchor?: string;
   explanation?: string;
   lastConcept?: ConceptUpdate;
+  difficulty?: "easy" | "medium" | "hard";
   progress: string[];
   reviews: QuizReviewItem[];
   completion?: { score: number; total: number };

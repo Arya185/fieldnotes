@@ -2,6 +2,7 @@ import type {
   ArtifactCard,
   AskEvent,
   AskRequest,
+  ConceptMapResponse,
   FlashcardListResponse,
   FlashcardReviewRequest,
   FlashcardReviewResponse,
@@ -211,6 +212,37 @@ export async function logout(): Promise<{ status: string }> {
   });
 }
 
+export interface DriveFile {
+  id: string;
+  name: string;
+  mime_type: string;
+  importable: boolean;
+}
+
+export async function getGoogleDriveStatus(): Promise<{ connected: boolean }> {
+  return requestJson<{ connected: boolean }>(`${API_BASE}/integrations/google-drive/status`);
+}
+
+export async function loginGoogleDrive(): Promise<{ redirect_url: string }> {
+  return requestJson<{ redirect_url: string }>(`${API_BASE}/auth/login/google-drive`);
+}
+
+export async function listGoogleDriveFiles(folderId?: string): Promise<{ files: DriveFile[] }> {
+  const qs = folderId ? `?folder_id=${encodeURIComponent(folderId)}` : "";
+  return requestJson<{ files: DriveFile[] }>(`${API_BASE}/integrations/google-drive/files${qs}`);
+}
+
+export async function importGoogleDriveFiles(
+  workspace_id: string,
+  file_ids: string[],
+  folder_id?: string,
+): Promise<{ imported: string[] }> {
+  return requestJson<{ imported: string[] }>(`${API_BASE}/integrations/google-drive/import`, {
+    method: "POST",
+    body: JSON.stringify({ workspace_id, file_ids, folder_id: folder_id ?? null }),
+  });
+}
+
 export async function getStudyPlans(): Promise<unknown> {
   return requestJson<unknown>(`${API_BASE}/study-plans`);
 }
@@ -265,6 +297,13 @@ export async function reviewFlashcard(
   return requestJson<FlashcardReviewResponse>(`${API_BASE}/flashcards/review`, {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+export async function generateConceptMap(workspace_id: string): Promise<ConceptMapResponse> {
+  return requestJson<ConceptMapResponse>(`${API_BASE}/concept-map/generate`, {
+    method: "POST",
+    body: JSON.stringify({ workspace_id }),
   });
 }
 

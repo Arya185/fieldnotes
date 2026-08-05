@@ -558,8 +558,16 @@ class LLMClient:
         self,
         retrieval_results: list[RetrievalChunk],
         concept_ids: list[str] | None = None,
+        difficulty: str = "medium",
     ) -> QuizQuestionSchema:
-        """Generate one grounded quiz question from retrieved chunks."""
+        """Generate one grounded quiz question from retrieved chunks.
+
+        `difficulty` scales with the student's rolling accuracy on the target
+        concept within this session (see `backend/services/quiz.py`
+        `compute_quiz_difficulty`): a streak of correct answers raises it to
+        "hard" (cross-passage synthesis); a miss drops it to "easy" (direct
+        single-fact recall) so the requeued question is gentler.
+        """
 
         context = "\n\n".join(
             [
@@ -572,6 +580,17 @@ class LLMClient:
             if concept_ids
             else "Choose a concrete concept directly supported by the retrieved passages."
         )
+        difficulty_hint = {
+            "easy": (
+                "The student just missed this concept, so ask an easier question: a direct, "
+                "single-fact recall question explicitly stated in exactly one retrieved passage."
+            ),
+            "hard": (
+                "The student has answered this concept correctly multiple times in a row, so "
+                "raise the bar: ask a question that requires synthesizing information across at "
+                "least two of the retrieved passages rather than single-fact recall."
+            ),
+        }.get(difficulty, "Ask a moderate-difficulty question grounded in one retrieved passage.")
         response = self._create_structured_completion(
             response_name="quiz_question",
             schema=QuizQuestionSchema.model_json_schema(),
@@ -582,7 +601,7 @@ class LLMClient:
                         "Generate exactly one multiple-choice quiz question grounded only in the "
                         "retrieved passages. Use exactly four options, exactly one correct answer, "
                         "and return the source_anchor as one of the provided full anchors. "
-                        f"{concept_hint}"
+                        f"{concept_hint} {difficulty_hint}"
                     ),
                 },
                 {

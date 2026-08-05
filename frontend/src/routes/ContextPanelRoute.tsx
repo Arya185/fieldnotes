@@ -46,7 +46,7 @@ export function ContextPanelRoute({
   onResetArtifactVisibility,
 }: ContextPanelRouteProps) {
   return (
-    <aside className="rightbar panel">
+    <aside className="rightbar panel" aria-label="Context panel">
       <section className="section context-header">
         {contextPanelOpen ? (
           <div className="split-row">
@@ -107,17 +107,17 @@ export function ContextPanelRoute({
 
       {contextPanelOpen && (
         <>
-          <section className="section context-tabs">
-            <button className="tab" aria-selected={contextTab === "sources"} onClick={() => onSetContextTab("sources")}>
+          <div className="section context-tabs" role="tablist" aria-label="Context panel tabs">
+            <button className="tab" role="tab" aria-selected={contextTab === "sources"} onClick={() => onSetContextTab("sources")}>
               Sources
             </button>
-            <button className="tab" aria-selected={contextTab === "notebook"} onClick={() => onSetContextTab("notebook")}>
+            <button className="tab" role="tab" aria-selected={contextTab === "notebook"} onClick={() => onSetContextTab("notebook")}>
               Notebook
             </button>
-            <button className="tab" aria-selected={contextTab === "quiz"} onClick={() => onSetContextTab("quiz")}>
+            <button className="tab" role="tab" aria-selected={contextTab === "quiz"} onClick={() => onSetContextTab("quiz")}>
               Quiz
             </button>
-          </section>
+          </div>
 
           <section className="section">
             <strong>Workspace Status</strong>

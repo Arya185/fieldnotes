@@ -323,6 +323,8 @@ export function useFieldnotesApp(
     handleRetryLast: ask.handleRetryLast,
     handleRegenerate: ask.handleRegenerate,
     handleOpenArtifact: workspace.handleOpenArtifact,
+    handleGenerateConceptMap: workspace.handleGenerateConceptMap,
+    conceptMapLoading: workspace.conceptMapLoading,
     handleStartQuiz: quiz.handleStartQuiz,
     handleAnswerQuiz: quiz.handleAnswerQuiz,
     handleJumpToSource: ask.openCitation,

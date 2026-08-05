@@ -164,7 +164,7 @@ export function ChatRoute({
           {message.concepts.length > 0 && (
             <div className="chip-row">
               {message.concepts.map((concept) => (
-                <span className="pill" key={concept.concept_id}>
+                <span className={`pill ${concept.state === "shaky" ? "shaky" : ""}`} key={concept.concept_id}>
                   {concept.name}: {concept.state}
                 </span>
               ))}

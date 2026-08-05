@@ -32,7 +32,7 @@ class FakeLLMClient:
     ):
         yield f"Grounded answer for {question}"
 
-    def generate_quiz_question(self, retrieval_results, concept_ids=None) -> QuizQuestionSchema:
+    def generate_quiz_question(self, retrieval_results, concept_ids=None, difficulty="medium") -> QuizQuestionSchema:
         first = retrieval_results[0]
         return QuizQuestionSchema(
             question="Which file contains the grounded concept?",
@@ -162,6 +162,93 @@ class QuizEdgeCaseTests(unittest.TestCase):
         self.assertEqual(response.json()["code"], "INVALID_REQUEST")
         self.assertEqual(response.json()["message"], "Request payload is invalid.")
         self.assertIn("request_id", response.json())
+
+    def _start_and_answer(self, workspace_id: str, *, correct: bool) -> str:
+        """Start one quiz question, answer it, and return the question's difficulty."""
+        start_payloads = parse_sse_payloads(
+            self.client.post("/quiz/start", json={"workspace_id": workspace_id, "concept_ids": None}).text
+        )
+        question = next(p for p in start_payloads if p["event"] == "question")
+        # FakeLLMClient always marks index 0 correct (see test-local FakeLLMClient above).
+        chosen_index = 0 if correct else 1
+        self.client.post(
+            "/quiz/answer",
+            json={"workspace_id": workspace_id, "attempt_id": question["attempt_id"], "chosen_index": chosen_index},
+        )
+        return question["difficulty"]
+
+    @patch("backend.main.llm_client", new_callable=lambda: FakeLLMClient())
+    def test_adaptive_quiz_all_correct_streak_raises_difficulty(self, _fake_llm) -> None:
+        ws = self.base / "quiz-adaptive-correct"
+        build_csv_workspace(ws)
+        index = self.client.post("/index", json={"folder_path": str(ws)}).json()
+        self.client.get(index["events"])
+        workspace_id = index["workspace_id"]
+
+        first_difficulty = self._start_and_answer(workspace_id, correct=True)
+        second_difficulty = self._start_and_answer(workspace_id, correct=True)
+        third_start = parse_sse_payloads(
+            self.client.post("/quiz/start", json={"workspace_id": workspace_id, "concept_ids": None}).text
+        )
+        third_difficulty = next(p for p in third_start if p["event"] == "question")["difficulty"]
+
+        self.assertEqual(first_difficulty, "medium")
+        self.assertEqual(second_difficulty, "medium")
+        self.assertEqual(third_difficulty, "hard")
+
+    @patch("backend.main.llm_client", new_callable=lambda: FakeLLMClient())
+    def test_adaptive_quiz_all_incorrect_streak_lowers_difficulty(self, _fake_llm) -> None:
+        ws = self.base / "quiz-adaptive-incorrect"
+        build_csv_workspace(ws)
+        index = self.client.post("/index", json={"folder_path": str(ws)}).json()
+        self.client.get(index["events"])
+        workspace_id = index["workspace_id"]
+
+        first_difficulty = self._start_and_answer(workspace_id, correct=False)
+        second_start = parse_sse_payloads(
+            self.client.post("/quiz/start", json={"workspace_id": workspace_id, "concept_ids": None}).text
+        )
+        second_question = next(p for p in second_start if p["event"] == "question")
+        self.assertEqual(second_question["difficulty"], "easy")
+
+        self.client.post(
+            "/quiz/answer",
+            json={
+                "workspace_id": workspace_id,
+                "attempt_id": second_question["attempt_id"],
+                "chosen_index": 1,
+            },
+        )
+        third_start = parse_sse_payloads(
+            self.client.post("/quiz/start", json={"workspace_id": workspace_id, "concept_ids": None}).text
+        )
+        third_difficulty = next(p for p in third_start if p["event"] == "question")["difficulty"]
+
+        self.assertEqual(first_difficulty, "medium")
+        self.assertEqual(third_difficulty, "easy")
+
+    @patch("backend.main.llm_client", new_callable=lambda: FakeLLMClient())
+    def test_adaptive_quiz_mixed_performance_tracks_recent_accuracy(self, _fake_llm) -> None:
+        ws = self.base / "quiz-adaptive-mixed"
+        build_csv_workspace(ws)
+        index = self.client.post("/index", json={"folder_path": str(ws)}).json()
+        self.client.get(index["events"])
+        workspace_id = index["workspace_id"]
+
+        difficulties = [
+            self._start_and_answer(workspace_id, correct=True),  # no history yet
+            self._start_and_answer(workspace_id, correct=True),  # streak=1
+            self._start_and_answer(workspace_id, correct=False),  # streak=2 -> hard question, then missed
+            self._start_and_answer(workspace_id, correct=True),  # most recent was a miss -> easy question
+        ]
+        final_start = parse_sse_payloads(
+            self.client.post("/quiz/start", json={"workspace_id": workspace_id, "concept_ids": None}).text
+        )
+        final_difficulty = next(p for p in final_start if p["event"] == "question")["difficulty"]
+
+        self.assertEqual(difficulties, ["medium", "medium", "hard", "easy"])
+        # most recent attempt was correct but only a streak of one -> back to medium
+        self.assertEqual(final_difficulty, "medium")
 
     def test_quiz_answer_malformed_json_returns_stable_422(self) -> None:
         response = self.client.post(

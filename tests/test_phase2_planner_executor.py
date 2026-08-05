@@ -118,6 +118,23 @@ class Phase2PlannerExecutorTests(unittest.TestCase):
         self.assertEqual(plan.steps[0].step_type, "retrieve")
         self.assertEqual(plan.steps[-1].step_type, "answer")
 
+    def test_fake_llm_client_builds_multi_step_plan_for_connect_and_visualize(self) -> None:
+        """FakeLLMClient must match default_plan's intent set so fake-mode tests
+        exercise the same multi-agent path (retrieve -> analyze -> execute_python
+        -> ...) as live mode for connect/visualize, not just analyze."""
+        from backend.release import FakeLLMClient
+        from backend.models import RouteIntentSchema
+
+        client = FakeLLMClient()
+        for intent in ("analyze", "visualize", "connect"):
+            plan = client.build_plan("question", RouteIntentSchema(intent=intent, targets=[], connect=intent == "connect"))
+            step_types = [step.step_type for step in plan.steps]
+            self.assertIn("analyze", step_types, msg=f"intent={intent}")
+            self.assertIn("execute_python", step_types, msg=f"intent={intent}")
+
+        retrieve_plan = client.build_plan("question", RouteIntentSchema(intent="retrieve", targets=[], connect=False))
+        self.assertNotIn("execute_python", [step.step_type for step in retrieve_plan.steps])
+
     def test_executor_runs_plan_and_generates_artifacts(self) -> None:
         workspace = self.base / "exec"
         build_csv_workspace(workspace)
@@ -159,6 +176,16 @@ class Phase2PlannerExecutorTests(unittest.TestCase):
         self.assertTrue(any(draft.artifact_type == "analysis" for draft in context.generated_artifacts))
         self.assertTrue(any(draft.artifact_type == "table" for draft in context.generated_artifacts))
         self.assertIn("answer_context", context.intermediate_results)
+
+        # Each step is genuinely delegated to its owning sub-agent, not run by
+        # one monolithic executor.
+        agent_by_step = {step.step_type: step.agent for step in context.step_executions}
+        self.assertEqual(agent_by_step["retrieve"], "retrieval-agent")
+        self.assertEqual(agent_by_step["analyze"], "analysis-agent")
+        self.assertEqual(agent_by_step["execute_python"], "analysis-agent")
+        self.assertEqual(agent_by_step["calculate"], "analysis-agent")
+        self.assertEqual(agent_by_step["summarize"], "synthesis-agent")
+        self.assertEqual(agent_by_step["answer"], "synthesis-agent")
 
     def test_executor_recovers_from_python_failure(self) -> None:
         workspace = self.base / "recover"

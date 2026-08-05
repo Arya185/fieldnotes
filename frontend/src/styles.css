@@ -459,6 +459,15 @@ a {
   border-color: rgba(178, 59, 59, 0.25);
 }
 
+/* Amber "shaky concept" chip — the one alarm color in normal use (design.md 5).
+   #7a4a03 on this background measures ~6.5:1, comfortably above the 4.5:1 AA
+   minimum for normal text. */
+.pill.shaky {
+  color: #7a4a03;
+  background: rgba(217, 119, 6, 0.14);
+  border-color: rgba(217, 119, 6, 0.4);
+}
+
 .tab,
 .button,
 .suggestion-chip,
@@ -634,7 +643,8 @@ a {
 .message-meta {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 8px 12px;
   color: var(--muted);
   font-size: 0.88rem;
   margin-bottom: 12px;
@@ -643,6 +653,8 @@ a {
 .message-body-wrap,
 .message-body {
   max-width: 72ch;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .message-body p {
@@ -1016,18 +1028,6 @@ summary:focus-visible {
 }
 
 @media (max-width: 1240px) {
-  .app-shell,
-  .app-shell.context-open,
-  .app-shell.sidebar-collapsed,
-  .app-shell.sidebar-collapsed.context-open {
-    grid-template-columns: 1fr;
-  }
-
-  .sidebar,
-  .rightbar {
-    max-height: none;
-  }
-
   .content-grid,
   .grid-two,
   .developer-grid {
@@ -1042,6 +1042,116 @@ summary:focus-visible {
   .flashcard-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* Below 1024px: notebook/context panel becomes a toggleable overlay drawer
+   instead of a fixed grid column, so the center pane keeps full width. */
+@media (max-width: 1024px) {
+  .app-shell,
+  .app-shell.context-open,
+  .app-shell.sidebar-collapsed,
+  .app-shell.sidebar-collapsed.context-open {
+    grid-template-columns: 280px minmax(0, 1fr);
+  }
+
+  .app-shell.sidebar-collapsed,
+  .app-shell.sidebar-collapsed.context-open {
+    grid-template-columns: 88px minmax(0, 1fr);
+  }
+
+  .rightbar {
+    position: fixed;
+    inset: 0 0 0 auto;
+    z-index: 60;
+    width: min(360px, 88vw);
+    max-height: none;
+    border-radius: 0;
+    transform: translateX(100%);
+    transition: transform 220ms ease;
+    box-shadow: var(--shadow-lg);
+  }
+
+  .app-shell.context-open .rightbar {
+    transform: translateX(0);
+  }
+
+  .drawer-backdrop.context-backdrop {
+    display: none;
+  }
+
+  .app-shell.context-open .drawer-backdrop.context-backdrop {
+    display: block;
+  }
+}
+
+/* Below 768px: sidebar becomes a toggleable overlay drawer too, center pane
+   is always full width, and the router trace / step strip wraps instead of
+   overflowing. */
+@media (max-width: 768px) {
+  .app-shell,
+  .app-shell.context-open,
+  .app-shell.sidebar-collapsed,
+  .app-shell.sidebar-collapsed.context-open {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 10px;
+    gap: 10px;
+  }
+
+  .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 60;
+    width: min(280px, 86vw);
+    max-height: none;
+    border-radius: 0;
+    transform: translateX(-100%);
+    transition: transform 220ms ease;
+    box-shadow: var(--shadow-lg);
+  }
+
+  .app-shell:not(.sidebar-collapsed) .sidebar {
+    transform: translateX(0);
+  }
+
+  .drawer-backdrop.sidebar-backdrop {
+    display: none;
+  }
+
+  .app-shell:not(.sidebar-collapsed) .drawer-backdrop.sidebar-backdrop {
+    display: block;
+  }
+
+  .main-header {
+    padding: 16px 16px 12px;
+  }
+
+  .modern-header,
+  .hero-inline {
+    flex-wrap: wrap;
+  }
+
+  .header-badges {
+    flex-wrap: wrap;
+  }
+
+  .main-scroll {
+    padding: 14px;
+  }
+
+  .quiz-progress-row {
+    gap: 8px;
+  }
+}
+
+.drawer-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  background: rgba(20, 32, 43, 0.42);
+  border: 0;
+  padding: 0;
+  cursor: pointer;
 }
 
 .button.success {
@@ -1113,4 +1223,68 @@ summary:focus-visible {
 .flip-card-back {
   transform: rotateY(180deg);
   background: radial-gradient(circle at top right, rgba(23, 104, 172, 0.1), transparent 45%), var(--panel-strong);
+}
+
+.concept-map-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.concept-map-view svg {
+  width: 100%;
+  max-width: 420px;
+  height: auto;
+}
+
+.concept-map-node {
+  cursor: pointer;
+}
+
+.concept-map-node:focus-visible circle {
+  outline: 3px solid rgba(23, 104, 172, 0.5);
+  outline-offset: 2px;
+}
+
+.concept-map-legend {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.drive-import {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.drive-import-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--panel-soft);
+}
+
+.drive-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 200px;
+  overflow: auto;
+}
+
+.drive-file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+
+.drive-file-row.disabled {
+  color: var(--muted);
 }

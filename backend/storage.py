@@ -612,14 +612,50 @@ def validate_citation_anchors(
     return valid
 
 
+def ensure_concept_occurrences_table(connection: sqlite3.Connection) -> None:
+    """Create the concept co-occurrence log used to build concept maps."""
+
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS concept_occurrences (
+            id TEXT PRIMARY KEY,
+            concept_id TEXT NOT NULL,
+            answer_id TEXT,
+            source_anchor TEXT,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_concept_occurrences_concept ON concept_occurrences(concept_id)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_concept_occurrences_answer ON concept_occurrences(answer_id)"
+    )
+
+
 def upsert_concept_updates(
     connection: sqlite3.Connection,
     updates: list[ConceptUpdate],
     source_anchor: str | None = None,
+    answer_id: str | None = None,
 ) -> None:
-    """Persist concept state updates."""
+    """Persist concept state updates and log one occurrence per update.
 
+    The occurrence log (`concept_occurrences`) is what the concept map is
+    built from: concepts logged under the same `answer_id`, or against the
+    same source document, become graph edges.
+    """
+
+    ensure_concept_occurrences_table(connection)
     for update in updates:
+        connection.execute(
+            """
+            INSERT INTO concept_occurrences (id, concept_id, answer_id, source_anchor, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (f"occ_{uuid4().hex[:12]}", update.concept_id, answer_id, source_anchor, utc_now_iso()),
+        )
         existing = connection.execute(
             "SELECT touch_count, miss_count FROM concepts WHERE id = ?",
             (update.concept_id,),
@@ -821,6 +857,47 @@ def record_quiz_answer(
         (chosen_index, is_correct, attempt_id),
     )
     return load_quiz_attempt(connection, attempt_id)
+
+
+def load_recent_quiz_attempts_for_concept(
+    connection: sqlite3.Connection, concept_id: str, limit: int = 5
+) -> list[dict]:
+    """Load the most recent answered quiz attempts for one concept, newest first."""
+
+    rows = connection.execute(
+        """
+        SELECT is_correct, created_at
+        FROM quiz_attempts
+        WHERE concept_id = ? AND chosen_index IS NOT NULL
+        ORDER BY created_at DESC
+        LIMIT ?
+        """,
+        (concept_id, limit),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def load_most_recently_answered_concept(connection: sqlite3.Connection) -> dict | None:
+    """Load the id/name of the concept behind the most recently answered quiz attempt."""
+
+    row = connection.execute(
+        """
+        SELECT c.id AS id, c.name AS name
+        FROM quiz_attempts qa
+        JOIN concepts c ON c.id = qa.concept_id
+        WHERE qa.chosen_index IS NOT NULL
+        ORDER BY qa.created_at DESC
+        LIMIT 1
+        """
+    ).fetchone()
+    return None if row is None else dict(row)
+
+
+def get_concept_id_by_name(connection: sqlite3.Connection, name: str) -> str | None:
+    """Resolve a concept's stable id from its display name."""
+
+    row = connection.execute("SELECT id FROM concepts WHERE name = ?", (name,)).fetchone()
+    return None if row is None else str(row["id"])
 
 
 def insert_flashcard(connection: sqlite3.Connection, card: dict) -> None:

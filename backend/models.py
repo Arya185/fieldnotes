@@ -15,7 +15,7 @@ class StrictModel(BaseModel):
 
 Intent = Literal["retrieve", "analyze", "visualize", "connect", "quiz"]
 ParseStatus = Literal["parsed", "failed", "skipped"]
-StepType = Literal["retrieval", "codegen", "execution", "grounding", "retry"]
+StepType = Literal["retrieval", "codegen", "execution", "grounding", "retry", "agent"]
 StepStatus = Literal["started", "ok", "failed", "no_match"]
 CitationChipType = Literal["document", "code"]
 ConceptState = Literal["touched", "shaky"]
@@ -161,6 +161,9 @@ AskEvent = Annotated[
 ]
 
 
+QuizDifficulty = Literal["easy", "medium", "hard"]
+
+
 class QuestionEvent(StrictModel):
     event: Literal["question"]
     attempt_id: str
@@ -170,6 +173,7 @@ class QuestionEvent(StrictModel):
     options: list[str] = Field(min_length=4, max_length=4)
     source_label: str
     source_anchor: str
+    difficulty: QuizDifficulty
 
 
 class GradedEvent(StrictModel):
@@ -335,3 +339,27 @@ class FlashcardReviewResponse(StrictModel):
     flashcard: Flashcard
     topic_mastery: float | None
     generated_more: bool
+
+
+class ConceptMapNode(StrictModel):
+    id: str
+    name: str
+    state: ConceptState
+    source_anchor: str | None = None
+
+
+class ConceptMapEdge(StrictModel):
+    source: str
+    target: str
+    weight: int
+    reasons: list[str]
+
+
+class GenerateConceptMapRequest(StrictModel):
+    workspace_id: str
+
+
+class ConceptMapResponse(StrictModel):
+    nodes: list[ConceptMapNode]
+    edges: list[ConceptMapEdge]
+    artifact_id: str | None = None

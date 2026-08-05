@@ -1,6 +1,16 @@
 import { EmptyState } from "../components/EmptyState";
 import type { QuizReviewItem, QuizState } from "../lib/appState/types";
 
+function difficultyTone(difficulty: QuizState["difficulty"]): string {
+  if (difficulty === "hard") {
+    return "danger";
+  }
+  if (difficulty === "easy") {
+    return "success";
+  }
+  return "";
+}
+
 interface ConceptSummaryItem {
   id: string;
   name: string;
@@ -20,6 +30,8 @@ interface QuizRouteProps {
   onRetryIncorrect: () => void;
   onAnswerQuiz: (choice: number) => void;
   onJumpToSource: (anchor: string | undefined) => void;
+  onGenerateConceptMap: () => void;
+  conceptMapLoading: boolean;
 }
 
 export function QuizRoute({
@@ -34,6 +46,8 @@ export function QuizRoute({
   onRetryIncorrect,
   onAnswerQuiz,
   onJumpToSource,
+  onGenerateConceptMap,
+  conceptMapLoading,
 }: QuizRouteProps) {
   return (
     <section className="workspace-overview stack">
@@ -53,6 +67,9 @@ export function QuizRoute({
         <button className="button ghost" onClick={onToggleIncorrectOnly} disabled={quizState.reviews.length === 0}>
           {incorrectReviewOnly ? "Show All Review" : "Incorrect Review"}
         </button>
+        <button className="button ghost" onClick={onGenerateConceptMap} disabled={!activeWorkspaceId || conceptMapLoading}>
+          {conceptMapLoading ? "Building Concept Map..." : "Concept Map"}
+        </button>
       </div>
       {!quizState.question && !quizState.completion && (
         <EmptyState
@@ -65,9 +82,18 @@ export function QuizRoute({
       {quizState.question && (
         <article className="quiz-card study-card">
           <div className="quiz-kicker">Question</div>
-          <div className="quiz-progress-row">
+          <div className="quiz-progress-row" aria-live="polite" aria-atomic="true">
             <span className="pill">Progress {Math.min(quizState.reviews.length + 1, quizState.completion?.total ?? 1)}/{quizState.completion?.total ?? 1}</span>
             {quizState.reviews.length > 0 && <span className="pill">Score {quizState.reviews.filter((item) => item.isCorrect).length}</span>}
+            {quizState.difficulty && (
+              <span className={`pill ${difficultyTone(quizState.difficulty)}`}>
+                {quizState.difficulty === "hard"
+                  ? "Adapting: harder — you're on a streak"
+                  : quizState.difficulty === "easy"
+                    ? "Adapting: easier — reviewing a missed concept"
+                    : `Difficulty: ${quizState.difficulty}`}
+              </span>
+            )}
           </div>
           <strong className="quiz-question">{quizState.question}</strong>
           <div className="quiz-options">
@@ -84,7 +110,7 @@ export function QuizRoute({
             </details>
           )}
           {quizState.lastConcept && (
-            <span className="pill">
+            <span className={`pill ${quizState.lastConcept.state === "shaky" ? "shaky" : ""}`}>
               {quizState.lastConcept.name}: {quizState.lastConcept.state}
             </span>
           )}

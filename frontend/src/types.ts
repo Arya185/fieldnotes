@@ -11,7 +11,8 @@ export type StepType =
   | "codegen"
   | "execution"
   | "grounding"
-  | "retry";
+  | "retry"
+  | "agent";
 export type StepStatus = "started" | "ok" | "failed" | "no_match";
 export type CitationChipType = "document" | "code";
 export type ConceptState = "touched" | "shaky";
@@ -145,6 +146,8 @@ export type AskEvent =
   | ErrorEvent
   | DoneEvent;
 
+export type QuizDifficulty = "easy" | "medium" | "hard";
+
 export interface QuestionEvent {
   event: "question";
   attempt_id: string;
@@ -154,6 +157,7 @@ export interface QuestionEvent {
   options: string[];
   source_label: string;
   source_anchor: string;
+  difficulty: QuizDifficulty;
 }
 
 export interface GradedEvent {
@@ -319,6 +323,26 @@ export interface FlashcardReviewResponse {
   flashcard: Flashcard;
   topic_mastery: number | null;
   generated_more: boolean;
+}
+
+export interface ConceptMapNode {
+  id: string;
+  name: string;
+  state: ConceptState;
+  source_anchor?: string;
+}
+
+export interface ConceptMapEdge {
+  source: string;
+  target: string;
+  weight: number;
+  reasons: string[];
+}
+
+export interface ConceptMapResponse {
+  nodes: ConceptMapNode[];
+  edges: ConceptMapEdge[];
+  artifact_id?: string;
 }
 
 export interface RetrievalInspectionRecord {

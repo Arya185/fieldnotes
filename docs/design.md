@@ -137,3 +137,26 @@ Shown ~30 seconds after folder selection. A **card, not a chat** — it proves c
 4. Lock badge visible in every shot for the one-sentence privacy close.
 
 Every one of these must read clearly in a compressed YouTube video at 1080p — check contrast and font sizes against that bar, not just the local display.
+
+---
+
+## 9. Responsive breakpoints
+
+The three-pane shell (sidebar / center / context panel) is a CSS grid (`.app-shell`) that narrows in three stages rather than clipping:
+
+- **>1480px:** full three columns — sidebar 280px, fluid center, context panel 360px when open.
+- **1024–1480px:** columns narrow (260px / 320px) to keep the center pane usable on laptop-width screens.
+- **≤1024px ("notebook drawer" tier):** the context/notebook panel (`.rightbar`) leaves the grid entirely and becomes a fixed overlay drawer sliding in from the right (`transform: translateX(...)`), toggled by the same "Show/Hide Context" control that already existed for desktop. A click-outside backdrop (`.drawer-backdrop.context-backdrop`) closes it. The center pane is always full width at this tier.
+- **≤768px ("sidebar drawer" tier):** the sidebar becomes the same kind of fixed overlay drawer from the left, toggled by its existing collapse button; the app-shell grid drops to a single fluid column; header badges and the message step/trace strip (`.message-meta`) wrap instead of overflowing; quiz options/progress rows already wrap via the shared `flex-wrap` group so quiz view stays scroll-free.
+
+No new UI framework was introduced — this reuses the `sidebarCollapsed` / `contextPanelOpen` state that already drove the desktop icon-rail collapse, just repurposed via media queries into drawer semantics on narrow viewports. Verified at 375px, 768px, 1024px, and 1440px.
+
+---
+
+## 10. Accessibility
+
+- Keyboard: every interactive control (starter cards, quiz options, citation chips, notebook cards, drawer backdrops, tabs) is a real `<button>`/`<summary>` and reachable via Tab with a visible `:focus-visible` outline (see the global `focus-visible` rule in `styles.css`).
+- Live regions: the SSE-driven surfaces — assistant streaming state, indexing progress log, and the quiz score/question-number change — announce via `aria-live="polite"` regions so screen-reader users get the same progressive-reveal information sighted users get from the trace.
+- Labeling: icon-only controls (sidebar collapse, context panel collapse, citation copy buttons, drawer backdrops) carry explicit `aria-label`s describing the action, not the icon.
+- Contrast: the amber "shaky concept" chip and citation chips were checked against a 4.5:1 minimum text-contrast bar at their default and hover states.
+- Known gap: no automated axe-core pass is wired into CI yet — tracked as a follow-up, not blocking for this pass.

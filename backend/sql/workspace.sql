@@ -23,3 +23,17 @@ CREATE TABLE IF NOT EXISTS workspace_members (
 
 CREATE INDEX IF NOT EXISTS idx_workspace_member_user ON workspace_members(user_id);
 CREATE INDEX IF NOT EXISTS idx_workspace_member_workspace ON workspace_members(workspace_id);
+
+-- One-time-fetch OAuth credential for the optional Google Drive import
+-- integration. Only ever used to list/download files at import time; imported
+-- files then live in the local workspace like any other local file.
+-- No FK to users(user_id): this must also work in local/no-auth mode, where
+-- the "local_admin" identity is synthetic and never persisted as a real row.
+CREATE TABLE IF NOT EXISTS google_drive_credentials (
+  user_id       TEXT PRIMARY KEY,
+  access_token  TEXT NOT NULL,
+  refresh_token TEXT,
+  expires_at    TEXT,
+  scope         TEXT,
+  updated_at    TEXT NOT NULL
+);

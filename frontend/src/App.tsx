@@ -29,6 +29,21 @@ export default function App() {
         {app.typingIndicator ? "Assistant typing." : app.statusMessage}
       </div>
 
+      <button
+        type="button"
+        className="drawer-backdrop sidebar-backdrop"
+        aria-label="Close sidebar"
+        tabIndex={app.sidebarCollapsed ? -1 : 0}
+        onClick={() => app.setSidebarCollapsed(true)}
+      />
+      <button
+        type="button"
+        className="drawer-backdrop context-backdrop"
+        aria-label="Close context panel"
+        tabIndex={app.contextPanelOpen ? 0 : -1}
+        onClick={() => app.setContextPanelOpen(false)}
+      />
+
       <AppSidebar
         sidebarCollapsed={app.sidebarCollapsed}
         developerMode={app.developerMode}
@@ -75,6 +90,7 @@ export default function App() {
                 <button
                   key={item}
                   className="tab"
+                  role="tab"
                   aria-selected={app.route === item}
                   onClick={() => app.setRoute(item)}
                 >
@@ -236,6 +252,7 @@ export default function App() {
                 app.setRoute("chat");
               }}
               onDeleteArtifact={app.deleteArtifact}
+              onJumpToSource={(anchor) => void app.handleJumpToSource(anchor)}
             />
           )}
 
@@ -266,6 +283,8 @@ export default function App() {
               onRetryIncorrect={() => app.setIncorrectReviewOnly(true)}
               onAnswerQuiz={(choice) => void app.handleAnswerQuiz(choice)}
               onJumpToSource={(anchor) => void app.handleJumpToSource(anchor)}
+              onGenerateConceptMap={() => void app.handleGenerateConceptMap()}
+              conceptMapLoading={app.conceptMapLoading}
             />
           )}
 

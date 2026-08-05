@@ -19,15 +19,27 @@ GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
 GITHUB_USERINFO_URL = "https://api.github.com/user"
 
 
-def google_authorize_url(state: str, redirect_uri: str, scope: str = "openid email profile") -> str:
+GOOGLE_DRIVE_IMPORT_SCOPE = "openid email profile https://www.googleapis.com/auth/drive.readonly"
+
+
+def google_authorize_url(
+    state: str,
+    redirect_uri: str,
+    scope: str = "openid email profile",
+    *,
+    access_type: str | None = None,
+    prompt: str = "select_account",
+) -> str:
     params = {
         "client_id": GOOGLE_CLIENT_ID,
         "response_type": "code",
         "scope": scope,
         "redirect_uri": redirect_uri,
         "state": state,
-        "prompt": "select_account",
+        "prompt": prompt,
     }
+    if access_type:
+        params["access_type"] = access_type
     return f"{GOOGLE_AUTH_URL}?{urlencode(params)}"
 
 

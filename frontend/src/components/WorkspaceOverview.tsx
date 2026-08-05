@@ -68,7 +68,7 @@ export function WorkspaceOverview({
         </article>
         <article className="workspace-pane">
           <div className="section-heading"><div><div className="eyebrow">Index Progress</div><h3>Latest run</h3></div></div>
-          <ul className="progress-list polished">
+          <ul className="progress-list polished" aria-live="polite" aria-relevant="additions">
             {indexEvents.length === 0 && <li>No active indexing run.</li>}
             {indexEvents.map((event, index) => <li key={`${event.event}-${index}`}>
               {event.event === "file_started" && `Started ${event.display_name}`}
