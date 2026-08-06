@@ -7,9 +7,10 @@ from pydantic import BaseModel
 
 from backend.auth.dependencies import get_current_user
 from backend.auth.models import AuthenticatedUser
-from backend.auth.security import assert_workspace_access, enforce_rate_limit
+from backend.auth.security import assert_workspace_access, enforce_rate_limit, get_workspace_repository
 from backend.db import connect_sqlite
 from backend.indexer.workspace_manager import workspace_manager
+from backend.indexer.workspace_repository import WorkspaceRepository
 from backend.services.planner import generate_study_plan
 from backend.storage import (
     ensure_study_tables,
@@ -36,6 +37,7 @@ class CreatePlanRequest(BaseModel):
 def _authorized_workspace(
     workspace_id: str,
     current_user: AuthenticatedUser,
+    repository: WorkspaceRepository,
 ):
     workspace = workspace_manager.get(workspace_id)
     if workspace is None:
@@ -43,7 +45,7 @@ def _authorized_workspace(
     assert_workspace_access(
         workspace_id,
         current_user,
-        workspace_manager._repository,
+        repository,
         WORKSPACE_ROLES,
     )
     return workspace
@@ -53,8 +55,9 @@ def _authorized_workspace(
 def get_plans(
     workspace_id: str,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    repository: WorkspaceRepository = Depends(get_workspace_repository),
 ):
-    workspace = _authorized_workspace(workspace_id, current_user)
+    workspace = _authorized_workspace(workspace_id, current_user, repository)
     conn = connect_sqlite(workspace.db_path)
     try:
         ensure_study_tables(conn)
@@ -68,8 +71,9 @@ def create_plan(
     payload: CreatePlanRequest,
     request: Request,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    repository: WorkspaceRepository = Depends(get_workspace_repository),
 ):
-    workspace = _authorized_workspace(payload.workspace_id, current_user)
+    workspace = _authorized_workspace(payload.workspace_id, current_user, repository)
     enforce_rate_limit(
         request,
         scope="study_plan_create",
@@ -92,8 +96,9 @@ def get_plan(
     plan_id: str,
     workspace_id: str,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    repository: WorkspaceRepository = Depends(get_workspace_repository),
 ):
-    workspace = _authorized_workspace(workspace_id, current_user)
+    workspace = _authorized_workspace(workspace_id, current_user, repository)
     conn = connect_sqlite(workspace.db_path)
     try:
         ensure_study_tables(conn)
@@ -113,8 +118,9 @@ def complete_plan_item(
     workspace_id: str,
     score: float | None = None,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    repository: WorkspaceRepository = Depends(get_workspace_repository),
 ):
-    workspace = _authorized_workspace(workspace_id, current_user)
+    workspace = _authorized_workspace(workspace_id, current_user, repository)
 
     conn = connect_sqlite(workspace.db_path)
     try:

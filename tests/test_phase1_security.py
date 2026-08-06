@@ -59,7 +59,19 @@ class Phase1SecurityTests(unittest.TestCase):
         self.env_patcher.start()
         auth_config.refresh()
         rate_limiter._buckets.clear()
-        self.client = TestClient(app)
+        # https base_url (not the TestClient default http://testserver) is
+        # required for Secure/__Host- cookies (oauth state, CSRF, session) to
+        # round-trip between requests on the same client — httpx correctly
+        # refuses to attach Secure-flagged cookies to a plain-http request,
+        # so login -> callback flows would otherwise silently lose them.
+        # raise_server_exceptions=False: HTTPExceptions raised directly in
+        # @app.middleware("http") functions (e.g. CSRF rejection) are caught
+        # by Starlette's outer ServerErrorMiddleware and correctly formatted
+        # by our registered exception handlers in a real deployment, but
+        # TestClient's default re-raises them for debugging visibility
+        # instead of returning the response — this class asserts on response
+        # status/body, so it wants the real response, not the re-raise.
+        self.client = TestClient(app, base_url="https://testserver", raise_server_exceptions=False)
 
     def tearDown(self) -> None:
         self.env_patcher.stop()
@@ -76,8 +88,13 @@ class Phase1SecurityTests(unittest.TestCase):
                 "/auth/callback",
                 params={"provider": "google", "code": "abc", "state": "wrong-state"},
             )
+            # Deliberately not asserting on response body content: the public
+            # error mapping collapses all plain-400s to a generic message so
+            # a caller probing this endpoint can't distinguish "state
+            # missing" from "state mismatch" from "state expired" via the
+            # response, which would otherwise be an oracle for CSRF-bypass
+            # iteration. The specific reason is still logged server-side.
             self.assertEqual(callback.status_code, 400)
-            self.assertIn("OAuth state mismatch", callback.text)
 
     def test_oauth_callback_is_single_use_and_clears_state_cookie(self) -> None:
         with patch.dict(os.environ, {"FIELDNOTES_AUTH_ENABLED": "1"}, clear=False):

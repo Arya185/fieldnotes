@@ -7,9 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from backend.auth.dependencies import get_current_user
 from backend.auth.models import AuthenticatedUser
-from backend.auth.security import assert_workspace_access
+from backend.auth.security import assert_workspace_access, get_workspace_repository
 from backend.db import connect_sqlite
 from backend.indexer.workspace_manager import workspace_manager
+from backend.indexer.workspace_repository import WorkspaceRepository
 from backend.models import ConceptMapEdge, ConceptMapNode, ConceptMapResponse, GenerateConceptMapRequest
 from backend.services.concept_map import build_concept_map
 from backend.storage import create_artifact
@@ -23,6 +24,7 @@ WORKSPACE_ROLES = ["owner", "teacher", "student", "viewer"]
 def post_generate_concept_map(
     payload: GenerateConceptMapRequest,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    repository: WorkspaceRepository = Depends(get_workspace_repository),
 ) -> ConceptMapResponse:
     """Build (and refresh) the concept map for one workspace from its concept log."""
 
@@ -30,7 +32,7 @@ def post_generate_concept_map(
     if workspace is None:
         raise HTTPException(status_code=404, detail="Unknown workspace_id")
     assert_workspace_access(
-        payload.workspace_id, current_user, workspace_manager._repository, WORKSPACE_ROLES
+        payload.workspace_id, current_user, repository, WORKSPACE_ROLES
     )
 
     connection = connect_sqlite(workspace.db_path)

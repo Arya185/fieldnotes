@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 os.environ.setdefault("FIELDNOTES_USE_FAKE_LLM", "1")
+os.environ.setdefault("FIELDNOTES_RATE_LIMIT_DISABLED", "1")
 
 from fastapi.testclient import TestClient
 
@@ -115,7 +116,11 @@ class ApiIntegrationTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
         self.base = Path(self.temp_dir.name)
-        self.env_patcher = patch.dict(os.environ, {"FIELDNOTES_USE_FAKE_LLM": "1"}, clear=True)
+        self.env_patcher = patch.dict(
+            os.environ,
+            {"FIELDNOTES_USE_FAKE_LLM": "1", "FIELDNOTES_RATE_LIMIT_DISABLED": "1"},
+            clear=True,
+        )
         self.env_patcher.start()
         self.client = TestClient(app)
 

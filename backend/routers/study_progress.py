@@ -4,21 +4,26 @@ from fastapi import APIRouter, Depends, HTTPException
 from datetime import datetime, timedelta, date
 
 from backend.indexer.workspace_manager import workspace_manager
+from backend.indexer.workspace_repository import WorkspaceRepository
 from backend.db import connect_sqlite
 from backend.storage import ensure_study_tables, list_topics, load_study_plan_items
 from backend.auth.dependencies import get_current_user
 from backend.auth.models import AuthenticatedUser
-from backend.auth.security import assert_workspace_access
+from backend.auth.security import assert_workspace_access, get_workspace_repository
 
 router = APIRouter()
 
 
 @router.get("/study-progress")
-def get_study_progress(workspace_id: str, current_user: AuthenticatedUser = Depends(get_current_user)):
+def get_study_progress(
+    workspace_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    repository: WorkspaceRepository = Depends(get_workspace_repository),
+):
     workspace = workspace_manager.get(workspace_id)
     if workspace is None:
         raise HTTPException(status_code=404, detail="Unknown workspace_id")
-    assert_workspace_access(workspace_id, current_user, workspace_manager._repository, ["owner", "teacher", "student", "viewer"])
+    assert_workspace_access(workspace_id, current_user, repository, ["owner", "teacher", "student", "viewer"])
 
     conn = connect_sqlite(workspace.db_path)
     try:

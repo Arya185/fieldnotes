@@ -13,7 +13,6 @@ from backend.migrations import forget_workspace_migration, migrate_workspace_dat
 
 logger = logging.getLogger("fieldnotes.storage")
 
-CURRENT_SCHEMA_VERSION = 2
 REPAIRED_WORKSPACE_WARNING = "Workspace storage was repaired."
 REINDEX_REQUIRED_WORKSPACE_WARNING = "Workspace storage requires re-indexing."
 _STORAGE_WARNINGS: dict[str, str] = {}
@@ -87,25 +86,6 @@ CREATE TABLE IF NOT EXISTS workspace_meta (
 );
 """
 
-SCHEMA_VERSION_SQL = """
-CREATE TABLE IF NOT EXISTS schema_version (
-  version INTEGER NOT NULL
-);
-"""
-
-MIGRATION_2_SQL = """
-CREATE TABLE IF NOT EXISTS embeddings (
-  chunk_id      TEXT PRIMARY KEY REFERENCES chunks(id) ON DELETE CASCADE,
-  provider      TEXT NOT NULL,
-  model         TEXT NOT NULL,
-  content_hash  TEXT NOT NULL,
-  vector_json   TEXT NOT NULL,
-  created_at    TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_embeddings_provider_model
-  ON embeddings(provider, model);
-"""
-
 
 class WorkspaceStorageRecoveryError(RuntimeError):
     """Raised when workspace storage cannot be rebuilt automatically."""
@@ -133,76 +113,6 @@ def initialize_schema(connection: sqlite3.Connection) -> None:
     db_path = Path(str(row[2]))
     migrate_workspace_database(db_path, connection=connection)
     connection.commit()
-
-
-def _table_exists(connection: sqlite3.Connection, table_name: str) -> bool:
-    row = connection.execute(
-        """
-        SELECT name
-        FROM sqlite_master
-        WHERE type = 'table' AND name = ?
-        """,
-        (table_name,),
-    ).fetchone()
-    return row is not None
-
-
-def _detect_legacy_schema(connection: sqlite3.Connection) -> bool:
-    legacy_tables = {
-        "files",
-        "chunks",
-        "dataset_profiles",
-        "concepts",
-        "quiz_attempts",
-        "artifacts",
-        "workspace_meta",
-    }
-    present = {
-        str(row["name"])
-        for row in connection.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table'"
-        ).fetchall()
-    }
-    return bool(legacy_tables & present)
-
-
-def _ensure_schema_version_table(connection: sqlite3.Connection) -> int:
-    if _table_exists(connection, "schema_version"):
-        row = connection.execute(
-            "SELECT version FROM schema_version ORDER BY rowid DESC LIMIT 1"
-        ).fetchone()
-        if row is None:
-            connection.execute("INSERT INTO schema_version (version) VALUES (?)", (1,))
-            return 1
-        return int(row["version"])
-
-    inferred_version = 1 if _detect_legacy_schema(connection) else 1
-    connection.executescript(SCHEMA_VERSION_SQL)
-    connection.execute("DELETE FROM schema_version")
-    connection.execute(
-        "INSERT INTO schema_version (version) VALUES (?)",
-        (inferred_version,),
-    )
-    return inferred_version
-
-
-def _apply_migrations(connection: sqlite3.Connection, current_version: int) -> None:
-    version = current_version
-    if version < 2:
-        connection.executescript(MIGRATION_2_SQL)
-        connection.execute("DELETE FROM schema_version")
-        connection.execute(
-            "INSERT INTO schema_version (version) VALUES (?)",
-            (2,),
-        )
-        version = 2
-    else:
-        connection.executescript(MIGRATION_2_SQL)
-
-    if version > CURRENT_SCHEMA_VERSION:
-        raise RuntimeError(
-            f"Unsupported schema version {version}; expected <= {CURRENT_SCHEMA_VERSION}"
-        )
 
 
 def latest_storage_warning(db_path: Path) -> str | None:

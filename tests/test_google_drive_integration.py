@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 os.environ.setdefault("FIELDNOTES_USE_FAKE_LLM", "1")
+os.environ.setdefault("FIELDNOTES_RATE_LIMIT_DISABLED", "1")
 os.environ.setdefault("FIELDNOTES_TOKEN_ENCRYPTION_KEY", "Z5c5qwSHl46AMkYhNpkx0A3VPl08zmvlaR271GGBq4w=")
 
 from fastapi.testclient import TestClient
@@ -101,6 +102,7 @@ class GoogleDriveRouterTests(unittest.TestCase):
             {
                 "FIELDNOTES_USE_FAKE_LLM": "1",
                 "FIELDNOTES_TOKEN_ENCRYPTION_KEY": "Z5c5qwSHl46AMkYhNpkx0A3VPl08zmvlaR271GGBq4w=",
+                "FIELDNOTES_RATE_LIMIT_DISABLED": "1",
             },
             clear=True,
         )
@@ -164,6 +166,7 @@ class GoogleDriveImportPipelineTests(unittest.TestCase):
             {
                 "FIELDNOTES_USE_FAKE_LLM": "1",
                 "FIELDNOTES_TOKEN_ENCRYPTION_KEY": "Z5c5qwSHl46AMkYhNpkx0A3VPl08zmvlaR271GGBq4w=",
+                "FIELDNOTES_RATE_LIMIT_DISABLED": "1",
             },
             clear=True,
         )

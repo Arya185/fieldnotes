@@ -29,7 +29,11 @@ class WorkspaceStorageRecoveryTests(unittest.TestCase):
         self.workspace = self.base / "workspace"
         self.workspace.mkdir()
         self.db_path = self.workspace / ".fieldnotes" / "fieldnotes.db"
-        self.env_patcher = patch.dict(os.environ, {"FIELDNOTES_USE_FAKE_LLM": "1"}, clear=True)
+        self.env_patcher = patch.dict(
+            os.environ,
+            {"FIELDNOTES_USE_FAKE_LLM": "1", "FIELDNOTES_RATE_LIMIT_DISABLED": "1"},
+            clear=True,
+        )
         self.env_patcher.start()
         self.client = TestClient(app)
 

@@ -10,10 +10,11 @@ from backend.auth.dependencies import get_current_user
 from backend.auth.drive_credentials import load_drive_credentials, save_drive_credentials
 from backend.auth.models import AuthenticatedUser
 from backend.auth.oauth import GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
-from backend.auth.security import assert_workspace_access, enforce_rate_limit
+from backend.auth.security import assert_workspace_access, enforce_rate_limit, get_workspace_repository
 from backend.config import WORKSPACE_REGISTRY_DB_PATH
 from backend.indexer.registry_database import RegistryDatabase
 from backend.indexer.workspace_manager import workspace_manager
+from backend.indexer.workspace_repository import WorkspaceRepository
 from backend.services.google_drive import (
     DriveFile,
     GoogleDriveError,
@@ -138,6 +139,7 @@ async def post_google_drive_import(
     payload: DriveImportRequest,
     request: Request,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    repository: WorkspaceRepository = Depends(get_workspace_repository),
 ) -> dict[str, list[str]]:
     """Download the selected Drive files into the workspace's local folder.
 
@@ -152,7 +154,7 @@ async def post_google_drive_import(
     assert_workspace_access(
         payload.workspace_id,
         current_user,
-        workspace_manager._repository,
+        repository,
         ["owner", "teacher", "student", "viewer"],
     )
     enforce_rate_limit(

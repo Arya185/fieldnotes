@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 os.environ.setdefault("FIELDNOTES_USE_FAKE_LLM", "1")
+os.environ.setdefault("FIELDNOTES_RATE_LIMIT_DISABLED", "1")
 
 from fastapi.testclient import TestClient
 

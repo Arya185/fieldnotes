@@ -4,8 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from backend.auth.dependencies import get_current_user
 from backend.auth.models import AuthenticatedUser
-from backend.auth.security import assert_workspace_access, enforce_rate_limit
+from backend.auth.security import assert_workspace_access, enforce_rate_limit, get_workspace_repository
 from backend.indexer.workspace_manager import workspace_manager
+from backend.indexer.workspace_repository import WorkspaceRepository
 from backend.models import (
     FlashcardListResponse,
     FlashcardReviewRequest,
@@ -28,6 +29,7 @@ def post_generate_flashcards(
     payload: GenerateFlashcardsRequest,
     request: Request,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    repository: WorkspaceRepository = Depends(get_workspace_repository),
 ) -> FlashcardListResponse:
     """Generate a grounded batch of flashcards for one workspace or topic."""
 
@@ -35,7 +37,7 @@ def post_generate_flashcards(
     if workspace is None:
         raise HTTPException(status_code=404, detail="Unknown workspace_id")
     assert_workspace_access(
-        payload.workspace_id, current_user, workspace_manager._repository, WORKSPACE_ROLES
+        payload.workspace_id, current_user, repository, WORKSPACE_ROLES
     )
     enforce_rate_limit(
         request,
@@ -63,6 +65,7 @@ def get_flashcards(
     topic_id: str | None = None,
     due_only: bool = False,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    repository: WorkspaceRepository = Depends(get_workspace_repository),
 ) -> FlashcardListResponse:
     """List persisted flashcards for one workspace, optionally filtered by topic or due date."""
 
@@ -70,7 +73,7 @@ def get_flashcards(
     if workspace is None:
         raise HTTPException(status_code=404, detail="Unknown workspace_id")
     assert_workspace_access(
-        workspace_id, current_user, workspace_manager._repository, WORKSPACE_ROLES
+        workspace_id, current_user, repository, WORKSPACE_ROLES
     )
 
     cards = list_flashcards_for_workspace(workspace.db_path, topic_id=topic_id, due_only=due_only)
@@ -81,6 +84,7 @@ def get_flashcards(
 def post_review_flashcard(
     payload: FlashcardReviewRequest,
     current_user: AuthenticatedUser = Depends(get_current_user),
+    repository: WorkspaceRepository = Depends(get_workspace_repository),
 ) -> FlashcardReviewResponse:
     """Grade one flashcard review, applying SM-2 spaced repetition and planner reactions."""
 
@@ -88,7 +92,7 @@ def post_review_flashcard(
     if workspace is None:
         raise HTTPException(status_code=404, detail="Unknown workspace_id")
     assert_workspace_access(
-        payload.workspace_id, current_user, workspace_manager._repository, WORKSPACE_ROLES
+        payload.workspace_id, current_user, repository, WORKSPACE_ROLES
     )
 
     try:

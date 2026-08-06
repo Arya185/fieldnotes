@@ -4,6 +4,7 @@ import logging
 import os
 import secrets
 import time
+from urllib.parse import urlsplit
 
 import jwt
 from fastapi import Depends, HTTPException, Request, status
@@ -11,6 +12,7 @@ from fastapi import Depends, HTTPException, Request, status
 from backend.auth.cookies import CSRF_COOKIE_NAME, SESSION_COOKIE_NAME
 from backend.auth.jwt import decode_token
 from backend.auth.models import AuthenticatedUser
+from backend.config import TRUSTED_ORIGINS
 from backend.indexer.registry_database import RegistryDatabase
 from backend.indexer.workspace_repository import WorkspaceRepository
 
@@ -192,6 +194,38 @@ def validate_csrf(request: Request) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="CSRF validation failed",
         )
+
+
+def reject_browser_origin(request: Request) -> None:
+    origin = request.headers.get("origin")
+    referer = request.headers.get("referer")
+    if origin and not _is_trusted_browser_origin(request, origin):
+        raise HTTPException(status_code=403, detail="Untrusted browser origin.")
+    if referer:
+        referer_origin = _origin_from_url(referer)
+        if not _is_trusted_browser_origin(request, referer_origin):
+            raise HTTPException(status_code=403, detail="Untrusted browser origin.")
+
+
+def _origin_from_url(value: str) -> str:
+    parts = urlsplit(value)
+    if not parts.scheme or not parts.netloc:
+        return ""
+    return f"{parts.scheme}://{parts.netloc}"
+
+
+def _is_trusted_browser_origin(request: Request, origin: str) -> bool:
+    if not origin:
+        return True
+    if origin in TRUSTED_ORIGINS:
+        return True
+    if origin == _origin_from_url(str(request.base_url)):
+        return True
+
+    parts = urlsplit(origin)
+    if parts.scheme not in {"http", "https"}:
+        return False
+    return parts.hostname in {"localhost", "127.0.0.1"}
 
 
 def rate_limit_subject(
