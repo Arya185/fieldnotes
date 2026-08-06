@@ -7,6 +7,7 @@ import json
 import sqlite3
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -31,8 +32,6 @@ from backend.auth.router import router as auth_router
 from backend.auth.security import (
     assert_workspace_access,
     enforce_rate_limit,
-    get_workspace_repository,
-    reject_browser_origin,
     validate_csrf,
 )
 from backend.routers.study_plans import router as study_router
@@ -41,7 +40,6 @@ from backend.routers.flashcards import router as flashcards_router
 from backend.routers.concept_map import router as concept_map_router
 from backend.routers.integrations import router as integrations_router
 from backend.indexer.workspace_manager import WorkspaceManager, WorkspaceRecord, workspace_manager
-from backend.indexer.workspace_repository import WorkspaceRepository
 from backend.models import (
     AskRequest,
     IndexRequest,
@@ -188,7 +186,7 @@ async def post_index(
 ) -> IndexAcceptedResponse:
     """Start background indexing run for a workspace folder."""
 
-    reject_browser_origin(http_request)
+    _reject_browser_origin(http_request)
     workspace_root = Path(request.folder_path).expanduser().resolve()
     workspace_record = manager.register(workspace_root)
     run_id, event_hub = runs.create_run()
@@ -231,10 +229,9 @@ async def post_ask(
     request: AskRequest,
     http_request: Request,
     current_user: AuthenticatedUser = Depends(get_current_user),
-    repository: WorkspaceRepository = Depends(get_workspace_repository),
 ) -> StreamingResponse:
     """Stream grounded assistant output for a user question."""
-    reject_browser_origin(http_request)
+    _reject_browser_origin(http_request)
     enforce_rate_limit(
         http_request,
         scope="ask_llm",
@@ -242,7 +239,7 @@ async def post_ask(
         capacity=10,
         refill_period_seconds=60,
     )
-    assert_workspace_access(request.workspace_id, current_user, repository, ["owner", "teacher", "student", "viewer"])
+    assert_workspace_access(request.workspace_id, current_user, workspace_manager._repository, ["owner", "teacher", "student", "viewer"])
     return StreamingResponse(
         stream_ask_events(request, http_request, _get_llm_client, _sse),
         media_type="text/event-stream",
@@ -254,10 +251,9 @@ async def post_quiz_start(
     request: QuizRequest,
     http_request: Request,
     current_user: AuthenticatedUser = Depends(get_current_user),
-    repository: WorkspaceRepository = Depends(get_workspace_repository),
 ) -> StreamingResponse:
     """Start one grounded quiz question for the selected workspace."""
-    reject_browser_origin(http_request)
+    _reject_browser_origin(http_request)
     enforce_rate_limit(
         http_request,
         scope="quiz_llm",
@@ -265,7 +261,7 @@ async def post_quiz_start(
         capacity=10,
         refill_period_seconds=60,
     )
-    assert_workspace_access(request.workspace_id, current_user, repository, ["owner", "teacher", "student", "viewer"])
+    assert_workspace_access(request.workspace_id, current_user, workspace_manager._repository, ["owner", "teacher", "student", "viewer"])
     return StreamingResponse(
         stream_quiz_start_events(request, http_request, _get_llm_client, _sse),
         media_type="text/event-stream",
@@ -277,11 +273,10 @@ async def post_quiz_answer(
     request: QuizAnswerRequest,
     http_request: Request,
     current_user: AuthenticatedUser = Depends(get_current_user),
-    repository: WorkspaceRepository = Depends(get_workspace_repository),
 ) -> StreamingResponse:
     """Grade one persisted quiz attempt and update concept state."""
-    reject_browser_origin(http_request)
-    assert_workspace_access(request.workspace_id, current_user, repository, ["owner", "teacher", "student", "viewer"])
+    _reject_browser_origin(http_request)
+    assert_workspace_access(request.workspace_id, current_user, workspace_manager._repository, ["owner", "teacher", "student", "viewer"])
     return StreamingResponse(
         stream_quiz_answer_events(request, http_request, _sse),
         media_type="text/event-stream",
@@ -292,12 +287,11 @@ def get_workspace_record(
     workspace_id: str,
     manager: WorkspaceManager = Depends(get_workspace_manager),
     current_user: AuthenticatedUser = Depends(get_current_user),
-    repository: WorkspaceRepository = Depends(get_workspace_repository),
 ) -> WorkspaceRecord:
     workspace_record = manager.get(workspace_id)
     if workspace_record is None:
         raise HTTPException(status_code=404, detail="Unknown workspace_id")
-    assert_workspace_access(workspace_id, current_user, repository, ["owner", "teacher", "student", "viewer"])
+    assert_workspace_access(workspace_id, current_user, manager._repository, ["owner", "teacher", "student", "viewer"])
     return workspace_record
 
 
@@ -371,3 +365,35 @@ def _get_llm_client():
     if llm_client is None:
         llm_client = FakeLLMClient() if determine_llm_mode() == "fake" else LLMClient()
     return llm_client
+
+
+def _reject_browser_origin(request: Request) -> None:
+    origin = request.headers.get("origin")
+    referer = request.headers.get("referer")
+    if origin and not _is_trusted_browser_origin(request, origin):
+        raise HTTPException(status_code=403, detail="Untrusted browser origin.")
+    if referer:
+        referer_origin = _origin_from_url(referer)
+        if not _is_trusted_browser_origin(request, referer_origin):
+            raise HTTPException(status_code=403, detail="Untrusted browser origin.")
+
+
+def _origin_from_url(value: str) -> str:
+    parts = urlsplit(value)
+    if not parts.scheme or not parts.netloc:
+        return ""
+    return f"{parts.scheme}://{parts.netloc}"
+
+
+def _is_trusted_browser_origin(request: Request, origin: str) -> bool:
+    if not origin:
+        return True
+    if origin in TRUSTED_ORIGINS:
+        return True
+    if origin == _origin_from_url(str(request.base_url)):
+        return True
+
+    parts = urlsplit(origin)
+    if parts.scheme not in {"http", "https"}:
+        return False
+    return parts.hostname in {"localhost", "127.0.0.1"}
